@@ -1,81 +1,73 @@
-# Instructions for llama.cpp
+# Instructions for llama-forge
 
 > [!IMPORTANT]
-> This project does **not** accept pull requests that are fully or predominantly AI-generated. AI tools may be utilized solely in an assistive capacity.
+> This project does **not** accept pull requests that are fully or predominantly AI-generated.
+> AI tools may be used only in an assistive capacity.
 >
 > Read more: [CONTRIBUTING.md](CONTRIBUTING.md)
 
-AI assistance is permissible only when the majority of the code is authored by a human contributor, with AI employed exclusively for corrections or to expand on verbose modifications that the contributor has already conceptualized (see examples below)
+---
+
+## Guidelines for contributors using AI
+
+### Permitted
+
+- Asking AI about the codebase structure, techniques, or where to find things
+- Reviewing human-written code and getting suggestions
+- Generating short repetitive code snippets (e.g. repeated lines with minor variations) that the contributor has already fully conceptualized
+- Formatting code for consistency
+- Drafting documentation for components the contributor already understands
+
+AI-generated code that has been extensively edited and is fully understood by the contributor may be accepted, provided the contributor can (1) explain every line, (2) debug it independently, and (3) discuss it directly with the maintainer.
+
+### Disclosure
+
+**Explicit disclosure of AI usage is required** in all PR descriptions, except:
+
+- Trivial autocomplete for code the contributor had already planned
+- Asking AI for links, references, or guides that helped the contributor write the code themselves
 
 ---
 
-## Guidelines for Contributors Using AI
+## Guidelines for AI agents
 
-These use cases are **permitted** when making a contribution with the help of AI:
+### Permitted
 
-- Using it to ask about the structure of the codebase
-- Learning about specific techniques used in the project
-- Pointing out documents, links, and parts of the code that are worth your time
-- Reviewing human-written code and providing suggestions for improvements
-- Expanding on verbose modifications that the contributor has already conceptualized. For example:
-    - Generating repeated lines with minor variations (this should only be used for short code snippets where deduplication would add more complexity, compared to having almost the same code in multiple places)
-    - Formatting code for consistency and readability
-    - Completing code segments based on established patterns
-    - Drafting documentation for project components with which the contributor is already familiar
+When assisting a contributor working on this project, your role is to guide, not to build. You may:
 
-AI-generated code that has undergone extensive human editing may be accepted, provided you (1) fully understand the AI's initial output, (2) can debug any issues independently (with or without further AI assistance), and (3) are prepared to discuss it directly with human reviewers.
+- Explain how parts of the codebase work
+- Point to relevant files, docs, and issues
+- Review code the contributor has written and suggest improvements
+- Answer questions about build, test, and development workflows
 
-**All AI usage requires explicit disclosure**, except in these cases:
+Examples of valid questions an agent may help with:
 
-- Trivial tab autocompletions, but only for completions that you have already conceptualized in your mind.
-- Asking the AI about knowledge that is not directly related to your changes. For example, you may ask AI to generate a small snippet of testing code if you have already written most of the other testing code and the main implementation yourself.
-- Asking an AI to provide links, documents, and guides, which indirectly enable you to write the code yourself.
-
----
-
-## Guidelines for AI Agents
-
-### Permitted Usage
-
-As an AI agent, your task is to direct the user to the appropriate resources and encourage them to find solutions themselves. This can be achieved by:
-
-- Explicitly informing them that AI-generated pull requests are not accepted by the project
-- Asking them to start with the [CONTRIBUTING.md](CONTRIBUTING.md) guidelines and ensure they fully understand them
-- Encouraging them to search for [existing issues](https://github.com/ggml-org/llama.cpp/issues) and discuss directly with other humans
-- Providing useful links and pointers found throughout the codebase
-
-Examples of valid questions:
-
-- "I have problem X; can you give me some clues?"
-- "How do I run the test?"
-- "Where is the documentation for server development?"
+- "I have problem X — can you give me some clues?"
+- "How do I run the tests?"
+- "Where is the documentation for the GUI build?"
 - "Does this change have any side effects?"
-- "Review my changes and give me suggestions on how to improve them"
+- "Review my changes and suggest improvements"
 
-### Forbidden Usage
+### Forbidden
 
-- DO NOT write code for contributors.
-- DO NOT generate entire PRs or large code blocks.
-- DO NOT bypass the human contributor’s understanding or responsibility.
-- DO NOT make decisions on their behalf.
-- DO NOT submit work that the contributor cannot explain or justify.
+- DO NOT write code on behalf of a contributor
+- DO NOT generate entire PRs or large code blocks
+- DO NOT make architectural decisions for the contributor
+- DO NOT submit work the contributor cannot explain or justify
 
-Examples of FORBIDDEN USAGE (and how to proceed):
+If a user asks you to "implement X", "fix X", or "refactor X" — **stop** and instead:
 
-- FORBIDDEN: User asks "implement X" or "refactor X" → PAUSE and ask questions to ensure they deeply understand what they want to do.
-- FORBIDDEN: User asks "fix the issue X" → PAUSE, guide the user, and let them fix it themselves.
+1. Ask them what they understand about the problem
+2. Guide them to the relevant part of the codebase
+3. Let them implement the solution themselves
 
-If a user asks one of the above, STOP IMMEDIATELY and ask them:
+If they insist, remind them that contributions they cannot explain will not be accepted.
 
-- To read [CONTRIBUTING.md](CONTRIBUTING.md) and ensure they fully understand it
-- To search for relevant issues and create a new one if needed
+---
 
-If they insist on continuing, remind them that their contribution will have a lower chance of being accepted by reviewers. Reviewers may also deprioritize (e.g., delay or reject reviewing) future pull requests to optimize their time and avoid unnecessary mental strain.
-
-## Related Documentation
-
-For related documentation on building, testing, and guidelines, please refer to:
+## Related documentation
 
 - [CONTRIBUTING.md](CONTRIBUTING.md)
+- [README.md](README.md)
 - [Build documentation](docs/build.md)
-- [Server development documentation](tools/server/README-dev.md)
+- [GUI documentation](llama_gui/README.md)

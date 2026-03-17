@@ -1,97 +1,81 @@
-# Security Policy
+# Security Policy — llama-forge
 
- - [**Reporting a vulnerability**](#reporting-a-vulnerability)
- - [**Requirements**](#requirements)
- - [**Covered Topics**](#covered-topics)
- - [**Using llama.cpp securely**](#using-llamacpp-securely)
-   - [Untrusted models](#untrusted-models)
-   - [Untrusted inputs](#untrusted-inputs)
-   - [Data privacy](#data-privacy)
-   - [Untrusted environments or networks](#untrusted-environments-or-networks)
-   - [Multi-Tenant environments](#multi-tenant-environments)
+- [Reporting a vulnerability](#reporting-a-vulnerability)
+- [Covered scope](#covered-scope)
+- [Using llama-forge securely](#using-llama-forge-securely)
+  - [Untrusted models](#untrusted-models)
+  - [Untrusted inputs](#untrusted-inputs)
+  - [GUI security](#gui-security)
+  - [Data privacy](#data-privacy)
+  - [Untrusted environments or networks](#untrusted-environments-or-networks)
+
+---
 
 ## Reporting a vulnerability
 
-If you have discovered a security vulnerability in this project that falls inside the [covered topics](#covered-topics), please report it privately. **Do not disclose it as a public issue.** This gives us time to work with you to fix the issue before public exposure, reducing the chance that the exploit will be used before a patch is released.
+If you discover a security vulnerability within the **fork-specific code** of this project (see [Covered scope](#covered-scope) below), please report it privately by opening a [GitHub Security Advisory](https://github.com/dev-boffin-io/llama-forge/security/advisories/new) or by contacting the maintainer directly.
 
-Please disclose it as a private [security advisory](https://github.com/ggml-org/llama.cpp/security/advisories/new).
+**Do not disclose it as a public issue.** This allows time to develop and release a fix before public exposure.
 
-A team of volunteers on a reasonable-effort basis maintains this project. As such, please give us at least 90 days to work on a fix before public exposure.
+This project is maintained on a best-effort basis. Please allow at least **90 days** before any public disclosure.
 
-> [!IMPORTANT]
-> For collaborators: if you are interested in helping out with reviewing private security disclosures, please see: https://github.com/ggml-org/llama.cpp/discussions/18080
+> **Note:** For vulnerabilities in the core llama.cpp engine (`src/`, `ggml/`, `gguf-py/`, `tools/`), please report them directly to the upstream project at:
+> https://github.com/ggml-org/llama.cpp/security/advisories/new
 
-## Requirements
+---
 
-Before submitting your report, ensure you meet the following requirements:
+## Covered scope
 
-- You have read this policy and fully understand it.
-- AI is only permitted in an assistive capacity as stated in [AGENTS.md](AGENTS.md). We do not accept reports that are written exclusively by AI.
-- Your report must include a working Proof-of-Concept in the form of a script and/or attached files.
+Security reports for this fork are accepted only for **fork-specific code**:
 
-Maintainers reserve the right to close the report if these requirements are not fulfilled.
+- `llama_gui/` — the desktop GUI application
+  - `llama_gui/core/` — project detection, config persistence
+  - `llama_gui/gui/` — Tkinter UI components
+  - `llama_gui/utils/` — terminal launch, subprocess streaming, GGUF reading
+  - `llama_gui/CMakeLists.txt` — build system
 
-## Covered Topics
+Everything outside `llama_gui/` is upstream code. Security issues in those areas should be reported to [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp/security/advisories/new).
 
-Only vulnerabilities that fall within these parts of the project are considered valid. For problems falling outside of this list, please report them as issues.
+---
 
-- `src/**/*`
-- `ggml/**/*`
-- `gguf-py/**/*`
-- `tools/server/*`, **excluding** the following topics:
-    - Web UI
-    - Features marked as experimental
-    - Features not recommended for use in untrusted environments (e.g., router, MCP)
-    - Bugs that can lead to Denial-of-Service attack
-
-Note that none of the topics under [Using llama.cpp securely](#using-llamacpp-securely) are considered vulnerabilities in LLaMA C++.
-
-For vulnerabilities that fall within the `vendor` directory, please report them directly to the third-party project.
-
-## Using llama.cpp securely
+## Using llama-forge securely
 
 ### Untrusted models
-Be careful when running untrusted models. This classification includes models created by unknown developers or utilizing data obtained from unknown sources.
 
-*Always execute untrusted models within a secure, isolated environment such as a sandbox* (e.g., containers, virtual machines). This helps protect your system from potentially malicious code.
+Exercise caution when loading GGUF files from unknown sources. Always run untrusted models inside an isolated environment (container, VM, or sandbox) to limit the blast radius of any malicious content embedded in the model file.
 
-> [!NOTE]
-> The trustworthiness of a model is not binary. You must always determine the proper level of caution depending on the specific model and how it matches your use case and risk tolerance.
+> The trustworthiness of a model is not binary. Assess risk based on the source, intended use, and your own tolerance.
 
 ### Untrusted inputs
 
-Some models accept various input formats (text, images, audio, etc.). The libraries converting these inputs have varying security levels, so it's crucial to isolate the model and carefully pre-process inputs to mitigate script injection risks.
+Models that accept text, images, or audio inputs may be vulnerable to prompt injection or adversarial inputs depending on the underlying libraries. When handling untrusted inputs:
 
-For maximum security when handling untrusted inputs, you may need to employ the following:
+- Sandbox the inference environment
+- Sanitize and validate inputs before passing them to the model
+- Keep llama-forge and all dependencies up to date
+- Test model behavior against known prompt injection patterns before deploying
 
-* Sandboxing: Isolate the environment where the inference happens.
-* Pre-analysis: Check how the model performs by default when exposed to prompt injection (e.g. using [fuzzing for prompt injection](https://github.com/FonduAI/awesome-prompt-injection?tab=readme-ov-file#tools)). This will give you leads on how hard you will have to work on the next topics.
-* Updates: Keep both LLaMA C++ and your libraries updated with the latest security patches.
-* Input Sanitation: Before feeding data to the model, sanitize inputs rigorously. This involves techniques such as:
-    * Validation: Enforce strict rules on allowed characters and data types.
-    * Filtering: Remove potentially malicious scripts or code fragments.
-    * Encoding: Convert special characters into safe representations.
-    * Verification: Run tooling that identifies potential script injections (e.g. [models that detect prompt injection attempts](https://python.langchain.com/docs/guides/safety/hugging_face_prompt_injection)).
+### GUI security
+
+The `llama_gui/` desktop application introduces its own attack surface:
+
+- **Config file** — user settings are stored at `~/.llama_cpp_gui.json`. This file is read and written without encryption. Do not store secrets there.
+- **Terminal launch** — the GUI constructs shell commands and passes them to a terminal emulator. Paths containing shell metacharacters in model filenames could lead to command injection. Always use model files from trusted sources.
+- **GGUF metadata** — the GGUF info reader (`utils/gguf_info.py`) parses binary file headers. Malformed or crafted GGUF files could trigger parser errors. The reader is designed to fail safely, but untrusted GGUF files should be treated with the same caution as untrusted executables.
+- **subprocess streaming** — conversion and quantization commands are run as subprocesses. The GUI does not sanitize user-supplied extra arguments before passing them to the subprocess. Do not paste untrusted argument strings into the Extra Arguments field.
 
 ### Data privacy
 
-To protect sensitive data from potential leaks or unauthorized access, it is crucial to sandbox the model execution. This means running the model in a secure, isolated environment, which helps mitigate many attack vectors.
+Model inference happens locally. No data is sent over the network by the GUI. However:
+
+- If using `llama-server` via the upstream CLI tools, network exposure rules apply — see the upstream security guidance.
+- The config file at `~/.llama_cpp_gui.json` stores absolute paths to your model files. Be aware of this if the machine is shared.
 
 ### Untrusted environments or networks
 
-If you can't run your models in a secure and isolated environment or if it must be exposed to an untrusted network, make sure to take the following security precautions:
-* Do not use the RPC backend, [rpc-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/rpc) and [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) functionality (see https://github.com/ggml-org/llama.cpp/pull/13061).
-* Confirm the hash of any downloaded artifact (e.g. pre-trained model weights) matches a known-good value.
-* Encrypt your data if sending it over the network.
+If running inference in an environment exposed to an untrusted network:
 
-### Multi-Tenant environments
-
-If you intend to run multiple models in parallel with shared memory, it is your responsibility to ensure the models do not interact or access each other's data. The primary areas of concern are tenant isolation, resource allocation, model sharing and hardware attacks.
-
-1. Tenant Isolation: Models should run separately with strong isolation methods to prevent unwanted data access. Separating networks is crucial for isolation, as it prevents unauthorized access to data or models and malicious users from sending graphs to execute under another tenant's identity.
-
-2. Resource Allocation: A denial of service caused by one model can impact the overall system health. Implement safeguards like rate limits, access controls, and health monitoring.
-
-3. Model Sharing: In a multitenant model sharing design, tenants and users must understand the security risks of running code provided by others. Since there are no reliable methods to detect malicious models, sandboxing the model execution is the recommended approach to mitigate the risk.
-
-4. Hardware Attacks: GPUs or TPUs can also be attacked. [Researches](https://scholar.google.com/scholar?q=gpu+side+channel) has shown that side channel attacks on GPUs are possible, which can make data leak from other models or processes running on the same system at the same time.
+- Do not expose `llama-server` without authentication or a firewall rule
+- Verify checksums of downloaded model files before loading them
+- Encrypt any data transmitted over the network
+- Do not use the RPC backend in untrusted network environments

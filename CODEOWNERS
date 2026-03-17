@@ -98,3 +98,4 @@
 /SECURITY.md                            @ggerganov
 /build-xcframework.sh                   @danbev
 requirements*.txt                       @CISC
+/llama_gui/                             @dev-boffin-io

@@ -192,6 +192,15 @@ endif()
 add_subdirectory(src)
 
 #
+# GUI
+#
+
+if (LLAMA_STANDALONE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/llama_gui/CMakeLists.txt)
+    message(STATUS "Building llama_gui")
+    add_subdirectory(llama_gui)
+endif()
+
+#
 # utils, programs, examples and tests
 #
 

@@ -45,6 +45,7 @@
 /tags
 /.build/
 /build*
+/llama_gui/build*
 /release
 /debug
 /libllama.so
