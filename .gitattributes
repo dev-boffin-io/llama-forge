@@ -1,6 +1,13 @@
+<<<<<<< HEAD
 AGENTS.md merge=ours
 CONTRIBUTING.md merge=ours
 SECURITY.md merge=ours
 AUTHORS merge=ours
 LICENSE merge=ours
 README.md merge=ours
+=======
+# Treat the generated single-file WebUI build as binary for diff purposes.
+# Git's pack-file delta compression still works (byte-level), but this prevents
+# git diff from printing the entire minified file on every change.
+tools/server/public/index.html -diff
+>>>>>>> 6b949d10785a80ead503f44a2cbe139ffcf8034a
