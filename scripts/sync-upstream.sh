@@ -23,7 +23,6 @@ CUSTOM_FILES=(
     "AUTHORS"
     "LICENSE"
     ".gitattributes"
-    "CMakeLists.txt"
     "scripts/sync-upstream.sh"
 )
 
@@ -137,6 +136,28 @@ if [ -f "$BACKUP/sync-script-self.sh" ]; then
     cp "$BACKUP/sync-script-self.sh" "$SELF"
     chmod +x "$SELF"
     success "Restored: sync script to $SELF"
+fi
+
+# ── Patch CMakeLists.txt for llama_gui ────────────────────────
+info "Patching CMakeLists.txt for llama_gui..."
+
+CMAKE_FILE="$REPO/CMakeLists.txt"
+
+if [ -f "$CMAKE_FILE" ]; then
+    if grep -q "Building llama_gui" "$CMAKE_FILE"; then
+        warn "llama_gui already present in CMakeLists.txt — skipping patch"
+    else
+        cat >> "$CMAKE_FILE" << 'EOF'
+
+if (LLAMA_STANDALONE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/llama_gui/CMakeLists.txt)
+    message(STATUS "Building llama_gui")
+    add_subdirectory(llama_gui)
+endif()
+EOF
+        success "Patched: CMakeLists.txt"
+    fi
+else
+    warn "CMakeLists.txt not found — skipping patch"
 fi
 
 # Cleanup backup
