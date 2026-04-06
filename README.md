@@ -181,13 +181,22 @@ llama-forge/
 
 llama-forge tracks [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) upstream master.
 
-To sync with upstream:
+### First-time setup
+
+```bash
+# Download the sync script
+curl -fsSL https://raw.githubusercontent.com/dev-boffin-io/llama-forge/master/scripts/sync-upstream.sh \
+    -o ~/llama-forge-sync.sh
+chmod +x ~/llama-forge-sync.sh
+```
+
+### Run
 
 ```bash
 bash ~/llama-forge-sync.sh
 ```
 
-> The sync script preserves all custom files (`llama_gui/`, `README.md`, `LICENSE`, etc.) automatically.
+> The sync script automatically preserves all custom files (`llama_gui/`, `README.md`, `LICENSE`, `.gitattributes`, etc.) and restores itself — safe to run daily.
 
 ---
 
