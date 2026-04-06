@@ -1,7 +1,8 @@
 """
 server_tab.py — llama-server tab for llama-forge GUI.
 
-Starts llama-server in a terminal window with configurable arguments.
+Starts llama-server in the BACKGROUND (no terminal window needed).
+Output is streamed directly into the log box inside the GUI.
 Boolean flags panel  — checkboxes, unchecked = not passed
 Value flags panel    — label + entry, empty = not passed
 """
@@ -12,7 +13,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from core.llama_detect import models_dir, supports_flag
-from utils.terminal import TERMINAL, _REAL_TERM, launch_in_terminal, shell_quote_list
+from utils.terminal import shell_quote_list
+from utils.subprocess_stream import stream_process
 from gui import make_scrollable, log_widget, append_log
 
 
@@ -21,6 +23,7 @@ class ServerTab:
         self.app = app
         self.frame = ttk.Frame(notebook)
         notebook.add(self.frame, text="Server")
+        self._proc = None   # running subprocess handle
         self._build()
 
     # ── build ────────────────────────────────────────────────────────────
@@ -124,22 +127,21 @@ class ServerTab:
         # ── Buttons ───────────────────────────────────────────────────
         btn_row = ttk.Frame(f)
         btn_row.pack(fill=tk.X, pady=14)
-        ttk.Button(btn_row, text="▶ Start Server",
-                   command=self._run_server).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        self._start_btn = ttk.Button(btn_row, text="▶ Start Server",
+                   command=self._run_server)
+        self._start_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        self._stop_btn = ttk.Button(btn_row, text="⏹ Stop Server",
+                   command=self._stop_server, state="disabled")
+        self._stop_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
         ttk.Button(btn_row, text="🌐 Open Web UI",
                    command=self._open_webui).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 0))
 
         # ── Log ───────────────────────────────────────────────────────
         self.logbox = log_widget(log_host, self.app.log_font)
-        self.logbox.configure(height=6)
+        self.logbox.configure(height=10)
         self.logbox.pack(fill="x", expand=False)
 
-        if TERMINAL:
-            real_name = _REAL_TERM or TERMINAL
-            self._log(f"✔ Terminal: {TERMINAL}" +
-                      (f" → {real_name}" if real_name != TERMINAL else ""))
-        else:
-            self._log("❌ No supported terminal detected")
+        self._log("✔ Server runs in background — output appears here")
 
     # ── actions ──────────────────────────────────────────────────────────
 
@@ -225,11 +227,63 @@ class ServerTab:
             import shlex
             cmd_list += shlex.split(self.extra_args.get().strip())
 
-        shell_cmd = shell_quote_list(cmd_list)
-        self._log(f"▶ {shell_cmd}")
+        self._log(f"▶ {shell_quote_list(cmd_list)}")
 
-        if not launch_in_terminal(shell_cmd, title="llama-server"):
-            messagebox.showerror("Error", "No terminal found!")
+        # ── Launch in background, stream output into logbox ──────────
+        import subprocess
+
+        try:
+            import subprocess as _sp
+            self._proc = _sp.Popen(
+                cmd_list,
+                stdout=_sp.PIPE,
+                stderr=_sp.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except FileNotFoundError:
+            messagebox.showerror("Error", f"llama-server not found:\n{srv}")
+            return
+
+        self._start_btn.config(state="disabled")
+        self._stop_btn.config(state="normal")
+
+        def _on_line(line: str):
+            self.frame.after(0, lambda: append_log(self.logbox, line))
+
+        def _on_done(rc: int):
+            self._proc = None
+            self.frame.after(0, self._on_server_done, rc)
+
+        # Use a simple reader thread (proc already started above)
+        import threading
+
+        def _reader():
+            try:
+                for raw in self._proc.stdout:
+                    line = raw.rstrip("\n")
+                    if line:
+                        _on_line(line + "\n")
+                self._proc.wait()
+                _on_done(self._proc.returncode)
+            except Exception:
+                import traceback
+                _on_line(f"\n❌ Exception:\n{traceback.format_exc()}\n")
+                _on_done(-1)
+
+        threading.Thread(target=_reader, daemon=True).start()
+
+    def _stop_server(self):
+        if self._proc and self._proc.poll() is None:
+            self._proc.terminate()
+            self._log("⏹ Server terminated.")
+        self._start_btn.config(state="normal")
+        self._stop_btn.config(state="disabled")
+
+    def _on_server_done(self, rc: int):
+        self._log(f"\n--- server exited (code {rc}) ---\n")
+        self._start_btn.config(state="normal")
+        self._stop_btn.config(state="disabled")
 
     def _open_webui(self):
         host = self.host.get().strip() or "127.0.0.1"
