@@ -7,6 +7,9 @@ Output is streamed directly into the log box inside the GUI.
 PID persistence: when a server is started, its PID is written to a
 ~/.cache/llama-forge/server_<port>.pid file so that GUI restarts can
 still show an active Stop button and terminate the process.
+
+Multi-server support: each port gets its own entry in the active-server
+list. Select a running server from the list and press Stop to kill it.
 """
 
 from __future__ import annotations
@@ -70,10 +73,12 @@ class ServerTab:
         self.app = app
         self.frame = ttk.Frame(notebook)
         notebook.add(self.frame, text="Server")
-        self._proc = None       # Popen handle (current session only)
-        self._saved_pid: int | None = None   # PID restored from file
+
+        # port → {"proc": Popen|None, "saved_pid": int|None, "label": str}
+        self._servers: dict[str, dict] = {}
+
         self._build()
-        self._restore_state()   # check for a server left running from last session
+        self._restore_state()   # check for servers left running from last session
 
     # ── build ────────────────────────────────────────────────────────────
 
@@ -173,13 +178,26 @@ class ServerTab:
         self.extra_args = tk.StringVar()
         ttk.Entry(ef, textvariable=self.extra_args).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
 
+        # ── Active Servers list ───────────────────────────────────────
+        sf = ttk.LabelFrame(f, text="Active Servers  (select → Stop)", padding=8)
+        sf.pack(fill=tk.X, pady=6)
+        sf.columnconfigure(0, weight=1)
+
+        self._server_listbox = tk.Listbox(
+            sf, height=4, selectmode=tk.SINGLE,
+            font=self.app.log_font, bg="#1e1e1e", fg="#a9dc76",
+            selectbackground="#3d3d3d", selectforeground="#ffffff",
+            activestyle="none",
+        )
+        self._server_listbox.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+
         # ── Buttons ───────────────────────────────────────────────────
         btn_row = ttk.Frame(f)
         btn_row.pack(fill=tk.X, pady=14)
         self._start_btn = ttk.Button(btn_row, text="▶ Start Server",
                                      command=self._run_server)
         self._start_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        self._stop_btn = ttk.Button(btn_row, text="⏹ Stop Server",
+        self._stop_btn = ttk.Button(btn_row, text="⏹ Stop Selected",
                                     command=self._stop_server, state="disabled")
         self._stop_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
         ttk.Button(btn_row, text="🌐 Open Web UI",
@@ -192,22 +210,54 @@ class ServerTab:
 
         self._log("✔ Server runs in background — output appears here")
 
+    # ── server list helpers ───────────────────────────────────────────────
+
+    def _listbox_label(self, port: str) -> str:
+        entry = self._servers.get(port, {})
+        proc = entry.get("proc")
+        saved_pid = entry.get("saved_pid")
+        pid = proc.pid if (proc and proc.poll() is None) else saved_pid
+        return f"port {port}  PID {pid}  [{entry.get('label', '')}]"
+
+    def _refresh_listbox(self):
+        """Rebuild the listbox from self._servers."""
+        self._server_listbox.delete(0, tk.END)
+        for port in list(self._servers.keys()):
+            self._server_listbox.insert(tk.END, self._listbox_label(port))
+        if self._servers:
+            self._stop_btn.config(state="normal")
+        else:
+            self._stop_btn.config(state="disabled")
+
+    def _selected_port(self) -> str | None:
+        """Return the port string of the selected listbox item, or None."""
+        sel = self._server_listbox.curselection()
+        if not sel:
+            return None
+        ports = list(self._servers.keys())
+        idx = sel[0]
+        return ports[idx] if idx < len(ports) else None
+
     # ── state restore (GUI reopen) ────────────────────────────────────────
 
     def _restore_state(self):
-        """Check if a server we launched previously is still running."""
-        port = self.port.get().strip() or "8080"
-        pid = _read_pid(port)
-        if pid and _pid_alive(pid):
-            self._saved_pid = pid
-            self._start_btn.config(state="normal")   # allow starting a NEW server
-            self._stop_btn.config(state="normal")
-            self._log(f"⚡ Server already running (PID {pid}, port {port}) — Stop button active")
-        else:
-            if pid:
-                _clear_pid(port)   # stale PID file
-            self._start_btn.config(state="normal")
-            self._stop_btn.config(state="disabled")
+        """Check for servers left running from previous GUI sessions."""
+        try:
+            for fname in os.listdir(_PID_DIR):
+                if not fname.startswith("server_") or not fname.endswith(".pid"):
+                    continue
+                port = fname[len("server_"):-len(".pid")]
+                pid = _read_pid(port)
+                if pid and _pid_alive(pid):
+                    self._servers[port] = {"proc": None, "saved_pid": pid,
+                                           "label": "restored"}
+                    self._log(f"⚡ Server already running on port {port} (PID {pid})")
+                else:
+                    if pid:
+                        _clear_pid(port)
+        except FileNotFoundError:
+            pass
+        self._refresh_listbox()
 
     # ── actions ──────────────────────────────────────────────────────────
 
@@ -249,6 +299,16 @@ class ServerTab:
             return
         if not getattr(self.app, "server_model", ""):
             messagebox.showerror("Error", "Select a GGUF model first!")
+            return
+
+        port = self.port.get().strip() or "8080"
+
+        if port in self._servers:
+            messagebox.showwarning(
+                "Already running",
+                f"A server is already tracked on port {port}.\n"
+                "Stop it first or use a different port.",
+            )
             return
 
         srv = os.path.join(self.app.bin_dir, "llama-server")
@@ -296,7 +356,7 @@ class ServerTab:
 
         import subprocess as _sp
         try:
-            self._proc = _sp.Popen(
+            proc = _sp.Popen(
                 cmd_list,
                 stdout=_sp.PIPE,
                 stderr=_sp.STDOUT,
@@ -307,65 +367,77 @@ class ServerTab:
             messagebox.showerror("Error", f"llama-server not found:\n{srv}")
             return
 
-        port = self.port.get().strip() or "8080"
-        _write_pid(port, self._proc.pid)
-        self._saved_pid = None   # this session owns the proc directly
-        self._log(f"✔ PID {self._proc.pid} saved (port {port})")
+        model_short = os.path.basename(self.app.server_model)
+        _write_pid(port, proc.pid)
+        self._servers[port] = {"proc": proc, "saved_pid": None,
+                                "label": model_short}
+        self._log(f"✔ PID {proc.pid} saved (port {port})")
+        self._refresh_listbox()
 
-        self._stop_btn.config(state="normal")
-
-        def _reader():
+        # Capture proc and port locally — reader thread must NOT touch self._servers
+        def _reader(p=proc, _port=port):
             try:
-                for raw in self._proc.stdout:
+                for raw in p.stdout:
                     line = raw.rstrip("\n")
                     if line:
                         self.frame.after(0, lambda l=line: append_log(self.logbox, l + "\n"))
-                self._proc.wait()
-                rc = self._proc.returncode
-                self._proc = None
-                _clear_pid(port)
-                self.frame.after(0, self._on_server_done, rc)
+                p.wait()
+                rc = p.returncode
             except Exception:
                 import traceback
                 tb = traceback.format_exc()
                 self.frame.after(0, lambda: append_log(self.logbox, f"\n❌ Exception:\n{tb}\n"))
-                self.frame.after(0, self._on_server_done, -1)
+                rc = -1
+            finally:
+                _clear_pid(_port)
+                self.frame.after(0, self._on_server_done, _port, rc)
 
         threading.Thread(target=_reader, daemon=True).start()
 
     def _stop_server(self):
-        port = self.port.get().strip() or "8080"
+        port = self._selected_port()
+        if port is None:
+            # Fall back to port field value if nothing selected in listbox
+            port = self.port.get().strip() or "8080"
 
-        # Case 1: server started in this GUI session
-        if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
-            self._log("⏹ Server terminated.")
-            self._proc = None
-            _clear_pid(port)
+        entry = self._servers.get(port)
+        if entry is None:
+            self._log(f"⚠ No tracked server on port {port}.")
+            return
 
-        # Case 2: server was left running from a previous GUI session
-        elif self._saved_pid and _pid_alive(self._saved_pid):
+        proc      = entry.get("proc")
+        saved_pid = entry.get("saved_pid")
+
+        if proc and proc.poll() is None:
+            # Server started in this session — terminate via Popen handle;
+            # _on_server_done (called from _reader) will clean up self._servers
+            proc.terminate()
+            self._log(f"⏹ Sent SIGTERM to server on port {port} (PID {proc.pid}).")
+        elif saved_pid and _pid_alive(saved_pid):
+            # Server restored from PID file (previous session)
             try:
-                os.kill(self._saved_pid, signal.SIGTERM)
-                self._log(f"⏹ Sent SIGTERM to PID {self._saved_pid}.")
+                os.kill(saved_pid, signal.SIGTERM)
+                self._log(f"⏹ Sent SIGTERM to PID {saved_pid} (port {port}).")
             except ProcessLookupError:
-                self._log(f"⚠ PID {self._saved_pid} already gone.")
-            self._saved_pid = None
+                self._log(f"⚠ PID {saved_pid} already gone.")
             _clear_pid(port)
-
+            del self._servers[port]
+            self._refresh_listbox()
         else:
-            self._log("⚠ No running server found.")
+            self._log(f"⚠ Server on port {port} is not alive.")
             _clear_pid(port)
+            del self._servers[port]
+            self._refresh_listbox()
 
-        self._stop_btn.config(state="disabled")
-
-    def _on_server_done(self, rc: int):
-        self._log(f"\n--- server exited (code {rc}) ---\n")
-        self._stop_btn.config(state="disabled")
+    def _on_server_done(self, port: str, rc: int):
+        self._log(f"\n--- server on port {port} exited (code {rc}) ---\n")
+        self._servers.pop(port, None)
+        self._refresh_listbox()
 
     def _open_webui(self):
         host = self.host.get().strip() or "127.0.0.1"
-        port = self.port.get().strip() or "8080"
+        # If a server is selected in the list, use its port; else use field
+        port = self._selected_port() or self.port.get().strip() or "8080"
         url  = f"http://{host}:{port}"
         self._log(f"🌐 Opening: {url}")
         import webbrowser
