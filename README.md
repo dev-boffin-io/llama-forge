@@ -10,7 +10,7 @@
 [![Upstream](https://img.shields.io/badge/Upstream-ggml--org%2Fllama.cpp-orange)](https://github.com/ggml-org/llama.cpp)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen)](https://github.com/dev-boffin-io/llama-forge)
 
-**llama-forge** is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp) extended with a native tkinter GUI frontend for running, quantizing, and converting large language models locally — with full support for Debian/Linux and Termux/Android ARM64.
+**llama-forge** is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp) extended with a native tkinter GUI frontend for running, quantizing, converting, and serving large language models locally — with full support for Debian/Linux and Termux/Android ARM64.
 
 </div>
 
@@ -27,6 +27,10 @@
   - [Termux / Android ARM64](#termux--android-arm64)
 - [Building from Source](#building-from-source)
 - [Usage](#usage)
+  - [Chat Tab](#chat-tab)
+  - [Quantize Tab](#quantize-tab)
+  - [Server Tab](#server-tab)
+  - [Convert Tools](#convert-tools)
 - [Project Structure](#project-structure)
 - [Upstream Sync](#upstream-sync)
 - [Contributing](#contributing)
@@ -36,7 +40,7 @@
 
 ## Overview
 
-llama-forge combines the full power of the llama.cpp inference engine with a user-friendly graphical interface. No command-line knowledge required to run, quantize, or convert GGUF models. Designed for developers and power users who want a local, private, and efficient LLM workflow.
+llama-forge combines the full power of the llama.cpp inference engine with a user-friendly graphical interface. No command-line knowledge required to run, quantize, serve, or convert GGUF models. Designed for developers and power users who want a local, private, and efficient LLM workflow.
 
 ---
 
@@ -44,11 +48,14 @@ llama-forge combines the full power of the llama.cpp inference engine with a use
 
 | Feature | Description |
 |--------|-------------|
-| 💬 **Chat** | Interactive chat with local GGUF models via llama-cli |
+| 💬 **Chat** | Interactive chat with local GGUF models via `llama-cli` |
 | ⚖️ **Quantize** | Quantize models to Q4_K_M, Q5_K_M, Q8_0, and more |
+| 🌐 **Server** | Launch and manage `llama-server` instances with a full argument GUI |
 | 🔄 **Convert** | Convert HuggingFace models to GGUF format |
 | 🔍 **Auto-detect** | Automatically finds llama.cpp binaries and models |
 | 🧠 **RAM-aware** | Displays available system RAM to guide model selection |
+| 📌 **PID Persistence** | Server processes survive GUI restarts — stop them any time |
+| 🖥️ **Multi-server** | Run multiple `llama-server` instances on different ports simultaneously |
 | 📦 **Portable Binary** | Ships as a single self-contained binary via PyInstaller |
 | 🖥️ **Desktop Entry** | Auto-installs `.desktop` launcher and icon |
 | 📱 **ARM64 Support** | Fully tested on Termux/Android ARM64 |
@@ -137,14 +144,72 @@ Launch the GUI:
 
 Or use the installed desktop entry from your application menu.
 
+---
+
 ### Chat Tab
-Select a model, configure parameters, and start chatting with any local GGUF model.
+
+Select a GGUF model and configure core inference parameters (`--ctx-size`, `--threads`, `--chat-template`, `--n-gpu-layers`, etc.). Boolean flags like `--flash-attn`, `--mlock`, and `--interactive-first` can be toggled via checkboxes. `llama-cli` launches in an external terminal with the fully composed command.
+
+---
 
 ### Quantize Tab
-Select a source model and target quantization type. llama-forge will invoke `llama-quantize` automatically.
 
-### Convert Tab
-Point to a HuggingFace model directory and convert it to GGUF using `convert_hf_to_gguf.py`.
+Select a source GGUF and a target quantization type. A RAM-based recommendation banner suggests the best quant type for your system. Supports all standard `llama-quantize` types including `Q4_K_M`, `Q5_K_M`, `Q6_K`, `Q8_0`, and full F16/F32. Output and token-embedding tensor types are configurable via dropdown. The built command is shown in the log before execution.
+
+---
+
+### Server Tab
+
+The Server tab launches and manages `llama-server` entirely in the background — no terminal window needed. Server stdout/stderr streams directly into the in-GUI log box.
+
+#### Core Arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `--host` | `127.0.0.1` | Bind address |
+| `--port` | `8080` | Listening port |
+| `--ctx-size` | `2048` | Context window size |
+| `--threads` | `2` | CPU thread count |
+| `--n-gpu-layers` | `0` | GPU offload layers |
+| `--batch-size` | `512` | Prompt batch size |
+| `--parallel` | `1` | Concurrent request slots |
+| `--n-predict` | `-1` | Max tokens per response |
+
+#### Boolean Flags
+
+Toggle via checkboxes (unchecked = not passed):
+
+`--flash-attn` · `--mlock` · `--no-mmap` · `--no-warmup` · `--embedding` · `--reranking` · `--log-disable` · `--verbose` · `--slots-endpoint-disable` · `--metrics`
+
+> Flags not supported by the current build are automatically skipped with a warning in the log.
+
+#### Optional Arguments
+
+Leave empty to skip. Supported fields:
+
+`--api-key` · `--chat-template` · `--system-prompt` · `--rope-freq-base` · `--rope-freq-scale` · `--override-kv` · `--lora` · `--path` · `--ssl-key-file` · `--ssl-cert-file`
+
+An **Extra args** free-text field is also available for any flags not covered above.
+
+#### Multi-Server Support
+
+Multiple `llama-server` instances can run simultaneously on different ports. Each running instance appears in the **Active Servers** list as:
+
+```
+port 8080  PID 12345  [model-name.gguf]
+```
+
+Select a server from the list and press **⏹ Stop Selected** to send `SIGTERM` to that process. Press **🌐 Open Web UI** to open the selected server's built-in chat interface in a browser.
+
+#### PID Persistence
+
+When a server is started, its PID is written to `~/.cache/llama-forge/server_<port>.pid`. If the GUI is closed while a server is running, reopening the GUI will detect the surviving process and restore it to the Active Servers list — the Stop button remains functional across sessions.
+
+---
+
+### Convert Tools
+
+Opens a separate **Convert Tools** window (top-right button, outside the main tabs). Point to a HuggingFace model directory and convert it to GGUF using `convert_hf_to_gguf.py`. Additional converters for legacy GGML and LoRA formats are also available.
 
 ---
 
@@ -152,27 +217,30 @@ Point to a HuggingFace model directory and convert it to GGUF using `convert_hf_
 
 ```
 llama-forge/
-├── llama_gui/              # GUI frontend (Python/tkinter)
-│   ├── app.py              # Entry point
-│   ├── CMakeLists.txt      # GUI build script
-│   ├── gui/                # Tab UI components
-│   │   ├── chat_tab.py
-│   │   ├── quant_tab.py
-│   │   └── converter.py
-│   ├── core/               # Business logic
-│   │   ├── llama_detect.py
-│   │   ├── quant_logic.py
-│   │   └── converter_logic.py
-│   └── utils/              # Helpers
-│       ├── ram_detect.py
-│       ├── gguf_info.py
-│       ├── terminal.py
-│       └── subprocess_stream.py
-├── src/                    # Upstream llama.cpp C++ source
-├── ggml/                   # Upstream ggml backend
-├── tools/                  # llama-server, llama-cli, etc.
-├── CMakeLists.txt          # Root build (includes llama_gui)
-└── llama-gui               # Built binary (after cmake build)
+├── llama_gui/                  # GUI frontend (Python/tkinter)
+│   ├── app.py                  # Entry point & App class
+│   ├── CMakeLists.txt          # GUI build script
+│   ├── llama_gui.png           # App icon
+│   ├── gui/                    # Tab UI components
+│   │   ├── __init__.py         # Shared widget helpers
+│   │   ├── chat_tab.py         # Chat (SAFE) tab
+│   │   ├── quant_tab.py        # Quantize tab
+│   │   ├── server_tab.py       # Server tab (multi-server, PID persistence)
+│   │   └── converter.py        # Convert Tools window
+│   ├── core/                   # Business logic
+│   │   ├── llama_detect.py     # Root detection, config persistence
+│   │   ├── quant_logic.py      # Quant type definitions, arg builder
+│   │   └── converter_logic.py  # Converter helpers
+│   └── utils/                  # Helpers
+│       ├── ram_detect.py       # System RAM detection
+│       ├── gguf_info.py        # GGUF metadata reader
+│       ├── terminal.py         # Terminal launcher helpers
+│       └── subprocess_stream.py # Non-blocking stdout streaming
+├── src/                        # Upstream llama.cpp C++ source
+├── ggml/                       # Upstream ggml backend
+├── tools/                      # llama-server, llama-cli, llama-quantize, etc.
+├── CMakeLists.txt              # Root build (includes llama_gui)
+└── llama-gui                   # Built binary (after cmake build)
 ```
 
 ---
@@ -184,7 +252,6 @@ llama-forge tracks [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) u
 ### First-time setup
 
 ```bash
-# Download the sync script
 curl -fsSL https://raw.githubusercontent.com/dev-boffin-io/llama-forge/master/scripts/sync-upstream.sh \
     -o ~/llama-forge-sync.sh
 chmod +x ~/llama-forge-sync.sh
