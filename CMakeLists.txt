@@ -288,3 +288,8 @@ configure_file(cmake/llama.pc.in
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/llama.pc"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+if (LLAMA_STANDALONE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/llama_gui/CMakeLists.txt)
+    message(STATUS "Building llama_gui")
+    add_subdirectory(llama_gui)
+endif()
