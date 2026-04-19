@@ -1,4 +1,80 @@
-# Treat the generated single-file WebUI build as binary for diff purposes.
-# Git's pack-file delta compression still works (byte-level), but this prevents
-# git diff from printing the entire minified file on every change.
-tools/server/public/index.html -diff
+# ─────────────────────────────────────────────
+# llama-forge — .gitattributes
+# ─────────────────────────────────────────────
+
+# Default: auto-detect text and normalize line endings to LF
+* text=auto eol=lf
+
+# ── Python ────────────────────────────────────
+*.py        text eol=lf
+*.pyi       text eol=lf
+*.pyw       text eol=lf
+
+# ── Shell ─────────────────────────────────────
+*.sh        text eol=lf
+*.bash      text eol=lf
+
+# ── C / C++ ───────────────────────────────────
+*.c         text eol=lf
+*.cc        text eol=lf
+*.cpp       text eol=lf
+*.cxx       text eol=lf
+*.h         text eol=lf
+*.hh        text eol=lf
+*.hpp       text eol=lf
+
+# ── CMake ─────────────────────────────────────
+CMakeLists.txt  text eol=lf
+*.cmake         text eol=lf
+*.cmake.in      text eol=lf
+
+# ── Markup / Docs ─────────────────────────────
+*.md        text eol=lf
+*.txt       text eol=lf
+*.rst       text eol=lf
+
+# ── Config / Data ─────────────────────────────
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.toml      text eol=lf
+*.ini       text eol=lf
+*.cfg       text eol=lf
+*.conf      text eol=lf
+*.env       text eol=lf
+*.in        text eol=lf
+
+# ── Web ───────────────────────────────────────
+*.html      text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+*.ts        text eol=lf
+*.jsx       text eol=lf
+*.tsx       text eol=lf
+*.svg       text eol=lf
+
+# ── Makefile ──────────────────────────────────
+Makefile    text eol=lf
+makefile    text eol=lf
+*.mk        text eol=lf
+
+# ── Binary ────────────────────────────────────
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.so        binary
+*.a         binary
+*.o         binary
+*.gguf      binary
+*.bin       binary
+*.pkl       binary
+*.pt        binary
+*.pth       binary
+*.zip       binary
+*.tar       binary
+*.gz        binary
+*.bz2       binary
+*.xz        binary

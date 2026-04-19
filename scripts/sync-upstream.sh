@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────
+# llama-forge — Upstream Sync Script
+# Maintainer: Boffin <tradeguruboffin@gmail.com>
+# Usage: bash ~/llama-forge-sync.sh
+# ─────────────────────────────────────────────────────────────
+
+set -euo pipefail
+
+# ── Config ────────────────────────────────────────────────────
+REPO="/opt/llama-forge"
+REMOTE="git@github.com:dev-boffin-io/llama-forge.git"
+
+# Pin to a specific upstream release tag.
+# To update: change PINNED_TAG to the desired tag (e.g. b8900)
+# then run this script again.
+PINNED_TAG="b8843"
+UPSTREAM="refs/tags/${PINNED_TAG}"
+
+BACKUP="/tmp/llama_forge_sync_bak"
+SELF="$(realpath "$0")"  # path of this script itself
+
+# Custom files to preserve across upstream resets
+CUSTOM_FILES=(
+    "README.md"
+    "AGENTS.md"
+    "CONTRIBUTING.md"
+    "SECURITY.md"
+    "AUTHORS"
+    "LICENSE"
+    ".gitattributes"
+    "scripts/sync-upstream.sh"
+)
+
+# ── Colors ────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+info()    { echo -e "${CYAN}==>${RESET} ${BOLD}$*${RESET}"; }
+success() { echo -e "${GREEN}  ✔${RESET} $*"; }
+warn()    { echo -e "${YELLOW}  ⚠${RESET} $*"; }
+error()   { echo -e "${RED}  ✘ ERROR:${RESET} $*" >&2; }
+die()     { error "$*"; exit 1; }
+
+# ── Sanity Checks ─────────────────────────────────────────────
+info "Checking environment..."
+
+[ -d "$REPO" ]       || die "Repo not found: $REPO"
+[ -d "$REPO/.git" ]  || die "Not a git repository: $REPO"
+
+cd "$REPO"
+
+git remote get-url upstream &>/dev/null \
+    || die "Remote 'upstream' not configured. Run:\n  git remote add upstream https://github.com/ggml-org/llama.cpp.git"
+
+git remote get-url origin &>/dev/null \
+    || die "Remote 'origin' not configured."
+
+success "Environment OK"
+
+# ── Abort any in-progress merge/rebase ────────────────────────
+info "Cleaning up any in-progress operations..."
+git merge --abort  2>/dev/null && warn "Aborted in-progress merge"  || true
+git rebase --abort 2>/dev/null && warn "Aborted in-progress rebase" || true
+git cherry-pick --abort 2>/dev/null || true
+
+# ── Backup ────────────────────────────────────────────────────
+info "Creating backup..."
+rm -rf "$BACKUP"
+mkdir -p "$BACKUP/custom_files/scripts"
+
+# Backup llama_gui
+if [ -d "$REPO/llama_gui" ]; then
+    cp -r "$REPO/llama_gui" "$BACKUP/llama_gui"
+    success "Backed up: llama_gui/"
+else
+    warn "llama_gui/ not found — skipping GUI backup"
+fi
+
+# Backup this script itself from $HOME
+if [ -f "$SELF" ]; then
+    cp "$SELF" "$BACKUP/sync-script-self.sh"
+    success "Backed up: sync script itself ($SELF)"
+fi
+
+# Backup custom files
+for f in "${CUSTOM_FILES[@]}"; do
+    if [ -f "$REPO/$f" ]; then
+        dir=$(dirname "$BACKUP/custom_files/$f")
+        mkdir -p "$dir"
+        cp "$REPO/$f" "$BACKUP/custom_files/$f"
+        success "Backed up: $f"
+    else
+        warn "Not found, skipping: $f"
+    fi
+done
+
+# ── Fetch Upstream ────────────────────────────────────────────
+info "Fetching upstream (tag: ${PINNED_TAG})..."
+git fetch upstream --tags || die "Failed to fetch upstream"
+
+# Verify the tag exists
+git rev-parse "$UPSTREAM" &>/dev/null \
+    || die "Tag '${PINNED_TAG}' not found in upstream. Check: https://github.com/ggml-org/llama.cpp/releases"
+
+UPSTREAM_SHA=$(git rev-parse "$UPSTREAM")
+LOCAL_SHA=$(git rev-parse HEAD)
+
+if [ "$UPSTREAM_SHA" = "$LOCAL_SHA" ]; then
+    warn "Already at tag ${PINNED_TAG} — nothing to sync."
+    NEEDS_PUSH=false
+else
+    success "Syncing to tag ${PINNED_TAG} ($(git rev-parse --short "$UPSTREAM"))"
+    NEEDS_PUSH=true
+fi
+
+# ── Reset to Upstream Tag ─────────────────────────────────────
+info "Resetting to ${UPSTREAM}..."
+git reset --hard "$UPSTREAM" || die "git reset failed"
+success "Reset to $(git rev-parse --short HEAD)"
+
+# ── Restore Custom Files ──────────────────────────────────────
+info "Restoring custom files..."
+
+if [ -d "$BACKUP/llama_gui" ]; then
+    rm -rf "$REPO/llama_gui"
+    cp -r "$BACKUP/llama_gui" "$REPO/llama_gui"
+    success "Restored: llama_gui/"
+fi
+
+for f in "${CUSTOM_FILES[@]}"; do
+    if [ -f "$BACKUP/custom_files/$f" ]; then
+        dir=$(dirname "$REPO/$f")
+        mkdir -p "$dir"
+        cp "$BACKUP/custom_files/$f" "$REPO/$f"
+        success "Restored: $f"
+    fi
+done
+
+# Restore script to $HOME as well
+if [ -f "$BACKUP/sync-script-self.sh" ]; then
+    cp "$BACKUP/sync-script-self.sh" "$SELF"
+    chmod +x "$SELF"
+    success "Restored: sync script to $SELF"
+fi
+
+# ── Patch CMakeLists.txt for llama_gui ────────────────────────
+info "Patching CMakeLists.txt for llama_gui..."
+
+CMAKE_FILE="$REPO/CMakeLists.txt"
+
+if [ -f "$CMAKE_FILE" ]; then
+    if grep -q "Building llama_gui" "$CMAKE_FILE"; then
+        warn "llama_gui already present in CMakeLists.txt — skipping patch"
+    else
+        cat >> "$CMAKE_FILE" << 'EOF'
+
+if (LLAMA_STANDALONE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/llama_gui/CMakeLists.txt)
+    message(STATUS "Building llama_gui")
+    add_subdirectory(llama_gui)
+endif()
+EOF
+        success "Patched: CMakeLists.txt"
+    fi
+else
+    warn "CMakeLists.txt not found — skipping patch"
+fi
+
+# Cleanup backup
+rm -rf "$BACKUP"
+
+# ── Stage & Commit ────────────────────────────────────────────
+info "Staging changes..."
+
+git add llama_gui/ 2>/dev/null || true
+for f in "${CUSTOM_FILES[@]}"; do
+    git add "$f" 2>/dev/null || true
+done
+
+if git diff --cached --quiet; then
+    success "Nothing to commit — already up to date."
+    NEEDS_PUSH=false
+else
+    COMMIT_MSG="chore: pin to llama.cpp tag ${PINNED_TAG} ($(git rev-parse --short "${UPSTREAM}"))"
+    git commit -m "$COMMIT_MSG"
+    success "Committed: $COMMIT_MSG"
+    NEEDS_PUSH=true
+fi
+
+# ── Push ──────────────────────────────────────────────────────
+if [ "$NEEDS_PUSH" = true ]; then
+    info "Pushing to origin..."
+    git push --force "$REMOTE" master \
+        && success "Pushed to $REMOTE" \
+        || die "Push failed. Check SSH key: ssh -T git@github.com"
+else
+    info "No push needed."
+fi
+
+# ── Done ──────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}${BOLD}─────────────────────────────────────────${RESET}"
+echo -e "${GREEN}${BOLD}  ✔  Sync complete!${RESET}"
+echo -e "${GREEN}${BOLD}─────────────────────────────────────────${RESET}"
+echo ""
+echo -e "  Pinned tag : ${PINNED_TAG}"
+echo -e "  Upstream   : $(git rev-parse --short "${UPSTREAM}")"
+echo -e "  Local      : $(git rev-parse --short HEAD)"
+echo ""
+echo -e "  To rebuild: ${CYAN}cmake --build $REPO/build${RESET}"
+echo ""
