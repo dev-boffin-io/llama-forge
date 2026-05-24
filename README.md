@@ -8,7 +8,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Android%20ARM64-lightgrey)](https://github.com/dev-boffin-io/llama-forge)
 [![Built With](https://img.shields.io/badge/Built%20With-Python%20%7C%20C%2B%2B-informational)](https://github.com/dev-boffin-io/llama-forge)
 [![Upstream](https://img.shields.io/badge/Upstream-ggml--org%2Fllama.cpp-orange)](https://github.com/ggml-org/llama.cpp)
-[![Pinned](https://img.shields.io/badge/Pinned-b8843-yellow)](https://github.com/ggml-org/llama.cpp/releases/tag/b8843)
+[![Pinned](https://img.shields.io/badge/Pinned-b9297-yellow)](https://github.com/ggml-org/llama.cpp/releases/tag/b9297)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen)](https://github.com/dev-boffin-io/llama-forge)
 
 **llama-forge** is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp) extended with a native tkinter GUI frontend for running, quantizing, converting, and serving large language models locally — with full support for Debian/Linux and Termux/Android ARM64.
@@ -17,7 +17,7 @@
 
 ---
 
-> ⚠️ **Version Info:** Pinned to llama.cpp release [`b8843`](https://github.com/ggml-org/llama.cpp/releases/tag/b8843) (19 April 2026). Stable & tested. Daily master sync is disabled.
+> ⚠️ **Version Info:** Pinned to llama.cpp release [`b9297`](https://github.com/ggml-org/llama.cpp/releases/tag/b9297) (24 May 2026). Stable & tested. Daily master sync is disabled.
 
 ---
 
@@ -54,13 +54,15 @@ llama-forge combines the full power of the llama.cpp inference engine with a use
 | Feature | Description |
 |--------|-------------|
 | 💬 **Chat** | Interactive chat with local GGUF models via `llama-cli` |
-| ⚖️ **Quantize** | Quantize models to Q4_K_M, Q5_K_M, Q8_0, and more |
+| ⚖️ **Quantize** | Quantize models to Q4_K_M, Q5_K_M, Q8_0, SIMD-optimised variants, and more |
 | 🌐 **Server** | Launch and manage `llama-server` instances with a full argument GUI |
 | 🔄 **Convert** | Convert HuggingFace models to GGUF format |
 | 🔍 **Auto-detect** | Automatically finds llama.cpp binaries and models |
 | 🧠 **RAM-aware** | Displays available system RAM to guide model selection |
 | 📌 **PID Persistence** | Server processes survive GUI restarts — stop them any time |
 | 🖥️ **Multi-server** | Run multiple `llama-server` instances on different ports simultaneously |
+| 🗂️ **KV Cache Control** | Configure `--cache-type-k/v`, `--cache-reuse`, `--defrag-thold` from the GUI |
+| 🤔 **Reasoning Model Support** | `--thinking`, `--jinja`, `--reasoning-budget` flags for CoT/reasoning models |
 | 📦 **Portable Binary** | Ships as a single self-contained binary via PyInstaller |
 | 🖥️ **Desktop Entry** | Auto-installs `.desktop` launcher and icon |
 | 📱 **ARM64 Support** | Fully tested on Termux/Android ARM64 |
@@ -153,13 +155,19 @@ Or use the installed desktop entry from your application menu.
 
 ### Chat Tab
 
-Select a GGUF model and configure core inference parameters (`--ctx-size`, `--threads`, `--chat-template`, `--n-gpu-layers`, etc.). Boolean flags like `--flash-attn`, `--mlock`, and `--interactive-first` can be toggled via checkboxes. `llama-cli` launches in an external terminal with the fully composed command.
+Select a GGUF model and configure core inference parameters (`--ctx-size`, `--threads`, `--n-gpu-layers`, `--batch-size`, `--ubatch-size`, etc.). Boolean flags like `--flash-attn`, `--mlock`, `--jinja`, and `--thinking` can be toggled via checkboxes. `llama-cli` launches in an external terminal with the fully composed command.
+
+**`--chat-template`** is now a searchable Combobox populated with all built-in templates supported by llama.cpp 2025: `chatml`, `llama3`, `llama4`, `mistral-v1/v3/v7`, `gemma`, `phi3`, `phi4`, `deepseek`/`deepseek2`/`deepseek3`, `qwen2`, `qwen3`, `command-r`, `falcon3`, `granite`, `grok-2`, and many more.
+
+**KV Cache** settings (`--cache-type-k` / `--cache-type-v`) are exposed as readonly Comboboxes supporting `f16`, `f32`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, `q5_1`. Only non-default values are passed to the binary.
+
+**Reasoning model flags**: `--thinking` enables CoT output for reasoning models; `--reasoning-budget` sets the token budget (-1 = unlimited, 0 = off); `--prio` controls thread priority (0–3).
 
 ---
 
 ### Quantize Tab
 
-Select a source GGUF and a target quantization type. A RAM-based recommendation banner suggests the best quant type for your system. Supports all standard `llama-quantize` types including `Q4_K_M`, `Q5_K_M`, `Q6_K`, `Q8_0`, and full F16/F32. Output and token-embedding tensor types are configurable via dropdown. The built command is shown in the log before execution.
+Select a source GGUF and a target quantization type. A RAM-based recommendation banner suggests the best quant type for your system. Supports all standard `llama-quantize` types including `Q4_K_M`, `Q5_K_M`, `Q6_K`, `Q8_0`, full `F16`/`F32`/`BF16`, and SIMD-optimised variants `q4_0_4_4`, `q4_0_4_8`, `q4_0_8_8` (ARM NEON / AVX-512 / AVX-VNNI). Output and token-embedding tensor types are configurable via dropdown. The built command is shown in the log before execution.
 
 ---
 
@@ -177,14 +185,26 @@ The Server tab launches and manages `llama-server` entirely in the background �
 | `--threads` | `2` | CPU thread count |
 | `--n-gpu-layers` | `0` | GPU offload layers |
 | `--batch-size` | `512` | Prompt batch size |
+| `--ubatch-size` | `512` | Physical batch size (micro-batch) |
 | `--parallel` | `1` | Concurrent request slots |
 | `--n-predict` | `-1` | Max tokens per response |
+
+#### KV Cache  (2025)
+
+| Argument | Default | Description |
+|---|---|---|
+| `--cache-type-k` | `f16` | Key cache quantization type |
+| `--cache-type-v` | `f16` | Value cache quantization type |
+| `--cache-reuse` | *(off)* | Prefix token reuse threshold (0 = off) |
+| `--defrag-thold` | *(off)* | KV cache defrag threshold (0.0–1.0, -1 = off) |
+
+Supported cache types: `f16` · `f32` · `bf16` · `q8_0` · `q4_0` · `q4_1` · `iq4_nl` · `q5_0` · `q5_1`
 
 #### Boolean Flags
 
 Toggle via checkboxes (unchecked = not passed):
 
-`--flash-attn` · `--mlock` · `--no-mmap` · `--no-warmup` · `--embedding` · `--reranking` · `--log-disable` · `--verbose` · `--slots-endpoint-disable` · `--metrics`
+`--flash-attn` · `--mlock` · `--no-mmap` · `--no-warmup` · `--embedding` · `--reranking` · `--log-disable` · `--verbose` · `--slots-endpoint-disable` · `--metrics` · `--jinja` · `--cont-batching` · `--kv-unified` · `--no-prefill-assistant` · `--ctx-shift-disable`
 
 > Flags not supported by the current build are automatically skipped with a warning in the log.
 
@@ -192,7 +212,7 @@ Toggle via checkboxes (unchecked = not passed):
 
 Leave empty to skip. Supported fields:
 
-`--api-key` · `--chat-template` · `--system-prompt` · `--rope-freq-base` · `--rope-freq-scale` · `--override-kv` · `--lora` · `--path` · `--ssl-key-file` · `--ssl-cert-file`
+`--api-key` · `--chat-template` · `--system-prompt` · `--rope-freq-base` · `--rope-freq-scale` · `--override-kv` · `--lora` · `--path` · `--ssl-key-file` · `--ssl-cert-file` · `--slot-save-path` · `--tensor-split` · `--reasoning-budget` · `--prio`
 
 An **Extra args** free-text field is also available for any flags not covered above.
 
@@ -252,7 +272,7 @@ llama-forge/
 
 ## 🔄 Upstream Sync
 
-llama-forge is pinned to a specific [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) release tag for stability. The current pinned tag is **`b8843`**.
+llama-forge is pinned to a specific [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) release tag for stability. The current pinned tag is **`b9297`**.
 
 To update to a newer tag, edit `PINNED_TAG` in `scripts/sync-upstream.sh` and re-run.
 

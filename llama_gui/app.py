@@ -22,7 +22,7 @@ from gui.quant_tab  import QuantTab
 from gui.server_tab import ServerTab
 from gui.converter  import ConverterManager
 
-APP_TITLE = "llama.cpp Tools GUI"
+APP_TITLE = "llama.cpp Tools GUI  (llama-forge 2025)"
 
 
 class App(tk.Tk):

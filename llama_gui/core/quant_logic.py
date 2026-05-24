@@ -1,31 +1,41 @@
 """
 quant_logic.py — llama-quantize argument builder and quant type list.
+
+Updated for latest llama.cpp (2025) — includes SIMD-optimised q4_0 variants,
+all IQ types, TQ types, and BF16.
 """
 
 from __future__ import annotations
 
 QUANT_TYPES: list[str] = [
-    # K-quants (recommended)
+    # K-quants (recommended for most use cases)
     "q2_K", "q2_K_S",
     "q3_K_S", "q3_K_M", "q3_K_L",
-    "q4_0", "q4_1", "q4_K_S", "q4_K_M",
-    "q5_0", "q5_1", "q5_K_S", "q5_K_M",
+    "q4_0", "q4_1",
+    "q4_K_S", "q4_K_M",
+    "q5_0", "q5_1",
+    "q5_K_S", "q5_K_M",
     "q6_K",
     "q8_0",
-    # float
+    # Float types
     "f16", "bf16", "f32",
     # IQ / importance-matrix quants
     "iq1_s", "iq1_m",
     "iq2_xxs", "iq2_xs", "iq2_s", "iq2_m",
     "iq3_xxs", "iq3_xs", "iq3_s", "iq3_m",
     "iq4_xs", "iq4_nl",
-    # 2-bit tiny
+    # TQ 2-bit tiny
     "tq1_0", "tq2_0",
-    # copy (no quantization)
+    # SIMD-optimised q4_0 variants (ARM NEON / AVX-512 / AVX-VNNI)
+    "q4_0_4_4", "q4_0_4_8", "q4_0_8_8",
+    # Copy (no quantization — useful for lossless round-trip)
     "copy",
 ]
 
 TENSOR_TYPES: list[str] = ["default", "f32", "f16", "bf16", "q8_0"]
+
+# KV cache types (--cache-type-k / --cache-type-v in llama-server/llama-cli)
+KV_CACHE_TYPES: list[str] = ["f16", "f32", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"]
 
 DEFAULT_QUANT = "q4_K_M"
 

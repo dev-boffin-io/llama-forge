@@ -7,6 +7,8 @@ Features:
   • All llama-quantize flags
   • GGUF info viewer on model select
   • RAM-based quant recommendation
+
+Cross-platform: Linux · macOS · Windows · Android/Termux
 """
 
 from __future__ import annotations
@@ -14,14 +16,21 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-from core.llama_detect import models_dir
+from core.llama_detect import models_dir, exe_name, resolve_exe
 from core.quant_logic import (
+    KV_CACHE_TYPES,
     QUANT_TYPES, TENSOR_TYPES, DEFAULT_QUANT, build_quantize_args
 )
 from utils.terminal import TERMINAL, launch_in_terminal, shell_quote_list
 from utils.gguf_info import read_gguf_info
 from utils.ram_detect import get_total_ram_gb, recommend_quant
 from gui import make_scrollable, log_widget, append_log
+
+
+def _default_browse_dir(current: str) -> str:
+    if current and os.path.exists(current):
+        return os.path.dirname(current)
+    return os.path.expanduser("~")
 
 
 class QuantTab:
@@ -132,6 +141,8 @@ class QuantTab:
 
         if TERMINAL:
             self._log(f"✔ Terminal: {TERMINAL}")
+        else:
+            self._log("❌ No supported terminal detected")
 
     # ── actions ──────────────────────────────────────────────────────────
 
@@ -139,25 +150,26 @@ class QuantTab:
         append_log(self.logbox, msg + "\n")
 
     def _pick_bin_dir(self):
-        d = filedialog.askdirectory(title="Select llama.cpp build/bin",
-                                    initialdir=self.app.bin_dir or "/")
+        d = filedialog.askdirectory(
+            title="Select llama.cpp build/bin",
+            initialdir=self.app.bin_dir or os.path.expanduser("~"),
+        )
         if not d:
             return
-        if os.path.isfile(os.path.join(d, "llama-cli")):
+        # Validate with llama-cli (shared bin dir check)
+        cli_path = os.path.join(d, exe_name("llama-cli"))
+        if os.path.isfile(cli_path):
             self.app.bin_dir = d
             self.app.save()
             self._log(f"✔ bin dir: {d}")
         else:
-            messagebox.showerror("Error", "llama-cli not found!")
+            messagebox.showerror(
+                "Error",
+                f"{exe_name('llama-cli')} not found in selected directory!"
+            )
 
     def _pick_gguf(self):
-        from core.llama_detect import LLAMA_ROOT
-        initial = (
-            os.path.dirname(self.app.quant_gguf)
-            if getattr(self.app, "quant_gguf", "") and
-               os.path.exists(self.app.quant_gguf)
-            else models_dir()
-        )
+        initial = _default_browse_dir(getattr(self.app, "quant_gguf", "")) or models_dir()
         p = filedialog.askopenfilename(
             title="Select GGUF file",
             initialdir=initial,
@@ -168,8 +180,6 @@ class QuantTab:
         self.app.quant_gguf = p
         self.app.save()
         self._log(f"✔ GGUF: {p}")
-
-        # Show GGUF info + set recommended quant
         self._show_gguf_info(p)
 
     def _show_gguf_info(self, path: str):
@@ -189,8 +199,8 @@ class QuantTab:
             f"  File size   : {info.file_size_mb:.1f} MB",
             "────────────────────────────────",
         ]
-        for l in lines:
-            self._log(l)
+        for ln in lines:
+            self._log(ln)
 
     def _browse_imatrix(self):
         p = filedialog.askopenfilename(
@@ -209,9 +219,12 @@ class QuantTab:
             messagebox.showerror("Error", "Select a source GGUF file first!")
             return
 
-        exe = os.path.join(self.app.bin_dir, "llama-quantize")
+        exe = resolve_exe("llama-quantize", self.app.bin_dir)
         if not os.path.isfile(exe):
-            messagebox.showerror("Error", "llama-quantize not found in bin dir!")
+            messagebox.showerror(
+                "Error",
+                f"{exe_name('llama-quantize')} not found in bin dir!\n{exe}"
+            )
             return
 
         args = build_quantize_args(

@@ -1,5 +1,10 @@
 """
 converter_logic.py — convert_hf_to_gguf / convert_lora_to_gguf arg builder.
+
+Updated for latest llama.cpp (2025):
+  • Added --hf-token, --vocab-dir, --token-count-threshold to HF text flags
+  • Added --skip-unknown, --pad-vocab, --print-supported-models to HF bool flags
+  • Added convert_hf_to_gguf_update.py to the scripts list
 """
 
 from __future__ import annotations
@@ -27,6 +32,9 @@ HF_BOOL_FLAGS: list[str] = [
     "--no-lazy",
     "--no-tensor-first-split",
     "--dry-run",
+    "--skip-unknown",        # NEW: skip unknown tensor types instead of failing
+    "--pad-vocab",           # NEW: pad vocabulary to a multiple of 32
+    "--print-supported-models",  # NEW: print supported model architectures
 ]
 
 HF_TEXT_FLAGS: list[str] = [
@@ -35,6 +43,9 @@ HF_TEXT_FLAGS: list[str] = [
     "--metadata",
     "--split-max-tensors",
     "--split-max-size",
+    "--hf-token",            # NEW: Hugging Face access token (for gated models)
+    "--vocab-dir",           # NEW: override vocab directory
+    "--token-count-threshold",  # NEW: min tensor element count for inclusion
 ]
 
 

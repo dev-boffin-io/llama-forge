@@ -14,7 +14,7 @@ REMOTE="git@github.com:dev-boffin-io/llama-forge.git"
 # Pin to a specific upstream release tag.
 # To update: change PINNED_TAG to the desired tag (e.g. b8900)
 # then run this script again.
-PINNED_TAG="b8843"
+PINNED_TAG="b9297"
 UPSTREAM="refs/tags/${PINNED_TAG}"
 
 BACKUP="/tmp/llama_forge_sync_bak"

@@ -1,5 +1,7 @@
 """
 ram_detect.py — system RAM detection and quant type recommendation.
+
+Updated for 2025: added psutil fallback for broader OS compatibility.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ def get_total_ram_gb() -> float:
     except OSError:
         pass
 
-    # macOS / BSD: sysctl
+    # macOS / BSD: sysctl hw.memsize
     try:
         import subprocess
         out = subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True)
@@ -26,17 +28,32 @@ def get_total_ram_gb() -> float:
     except Exception:
         pass
 
-    # Windows: wmic
+    # Windows: ctypes GlobalMemoryStatusEx (no subprocess needed)
     try:
-        import subprocess
-        out = subprocess.check_output(
-            ["wmic", "ComputerSystem", "get", "TotalPhysicalMemory"],
-            text=True
-        )
-        for line in out.splitlines():
-            line = line.strip()
-            if line.isdigit():
-                return round(int(line) / (1024 ** 3), 1)
+        import ctypes
+        class _MEMSTATUS(ctypes.Structure):
+            _fields_ = [
+                ("dwLength",                ctypes.c_ulong),
+                ("dwMemoryLoad",            ctypes.c_ulong),
+                ("ullTotalPhys",            ctypes.c_ulonglong),
+                ("ullAvailPhys",            ctypes.c_ulonglong),
+                ("ullTotalPageFile",        ctypes.c_ulonglong),
+                ("ullAvailPageFile",        ctypes.c_ulonglong),
+                ("ullTotalVirtual",         ctypes.c_ulonglong),
+                ("ullAvailVirtual",         ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+        ms = _MEMSTATUS()
+        ms.dwLength = ctypes.sizeof(ms)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
+        return round(ms.ullTotalPhys / (1024 ** 3), 1)
+    except Exception:
+        pass
+
+    # psutil (optional, cross-platform)
+    try:
+        import psutil
+        return round(psutil.virtual_memory().total / (1024 ** 3), 1)
     except Exception:
         pass
 
