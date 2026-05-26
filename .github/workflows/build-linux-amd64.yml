@@ -1,0 +1,84 @@
+name: Build — Linux AMD64
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Dependencies ──────────────────────────────────────────
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build \
+            libopenblas-dev \
+            python3 python3-pip python3-tk \
+            python3-venv
+
+      # ── llama.cpp full build ──────────────────────────────────
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=ON \
+            -DGGML_BLAS=ON \
+            -DGGML_BLAS_VENDOR=OpenBLAS \
+            -DGGML_NATIVE=OFF
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      # ── llama_gui PyInstaller ─────────────────────────────────
+      - name: Install PyInstaller
+        run: pip3 install --break-system-packages pyinstaller requests || \
+             pip3 install pyinstaller requests
+
+      - name: Package llama_gui
+        run: |
+          pyinstaller --onefile \
+            --name llama-forge-gui \
+            --add-data "llama_gui/llama_gui.png:llama_gui" \
+            --hidden-import tkinter \
+            --hidden-import tkinter.ttk \
+            --hidden-import tkinter.scrolledtext \
+            --hidden-import tkinter.messagebox \
+            --hidden-import tkinter.filedialog \
+            llama_gui/app.py
+
+      # ── Collect artifacts ─────────────────────────────────────
+      - name: Collect binaries
+        run: |
+          mkdir -p dist-release
+
+          for bin in llama-cli llama-server llama-quantize \
+                     llama-gguf-split llama-imatrix llama-bench \
+                     llama-perplexity llama-cvector-generator; do
+            if [ -f "build/bin/$bin" ]; then
+              cp "build/bin/$bin" dist-release/
+            fi
+          done
+
+          # GUI
+          cp dist/llama-forge-gui dist-release/
+          chmod +x dist-release/llama-forge-gui
+
+          # Python converter
+          for f in tools/convert_hf_to_gguf.py convert_hf_to_gguf.py; do
+            [ -f "$f" ] && cp "$f" dist-release/ && break
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-forge-linux-amd64
+          path: dist-release/
+          if-no-files-found: warn
