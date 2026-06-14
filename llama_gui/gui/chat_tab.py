@@ -1,5 +1,5 @@
 """
-chat_tab.py — Chat (SAFE) tab for llama-cli interactive mode.
+gui/chat_tab.py — Chat (SAFE) tab for llama-cli interactive mode (PyQt6).
 
 Boolean flags panel  — checkboxes, unchecked = not passed
 Value flags panel    — label + entry, empty = not passed
@@ -12,15 +12,21 @@ Updated for llama.cpp 2025:
 """
 
 from __future__ import annotations
+
 import os
-import sys
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+import shlex
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
+    QLineEdit, QPushButton, QComboBox, QCheckBox, QFileDialog,
+    QMessageBox, QSizePolicy,
+)
+from PyQt6.QtCore import Qt
 
 from core.llama_detect import models_dir, supports_flag, exe_name, resolve_exe
 from core.quant_logic import KV_CACHE_TYPES
 from utils.terminal import TERMINAL, launch_in_terminal, shell_quote_list
-from gui import make_scrollable, log_widget, append_log
+from gui import make_scrollable, LogConsole, append_log, card
 
 # All built-in chat templates supported by latest llama.cpp
 _CHAT_TEMPLATES = [
@@ -67,141 +73,160 @@ def _default_browse_dir(current: str) -> str:
     return os.path.expanduser("~")
 
 
-class ChatTab:
-    def __init__(self, notebook: ttk.Notebook, app):
+class ChatTab(QWidget):
+    def __init__(self, app: QWidget):
+        super().__init__()
         self.app = app
-        self.frame = ttk.Frame(notebook)
-        notebook.add(self.frame, text="Chat (SAFE)")
+        self._bool_flags: dict[str, QCheckBox] = {}
+        self._val_flags: dict[str, QLineEdit] = {}
         self._build()
 
     # ── build ────────────────────────────────────────────────────────────
 
     def _build(self):
-        ctrl_host = ttk.Frame(self.frame)
-        ctrl_host.pack(fill="both", expand=True)
-        log_host = ttk.Frame(self.frame, padding=(8, 0, 8, 8))
-        log_host.pack(fill="x", expand=False)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(8)
 
-        _canvas, f = make_scrollable(ctrl_host)
-        f.configure(padding=12)
+        content = QWidget()
+        f = QVBoxLayout(content)
+        f.setContentsMargins(14, 14, 14, 14)
+        f.setSpacing(10)
 
         # ── File selectors ────────────────────────────────────────────
-        ttk.Button(f, text="Select llama.cpp build/bin (Shared)",
-                   command=self._pick_bin_dir).pack(fill=tk.X, pady=6)
-        ttk.Button(f, text="Select GGUF model (for Chat)",
-                   command=self._pick_model).pack(fill=tk.X, pady=6)
+        btn_bin = QPushButton("📂  Select llama.cpp build/bin (Shared)")
+        btn_bin.clicked.connect(self._pick_bin_dir)
+        f.addWidget(btn_bin)
+
+        btn_model = QPushButton("📦  Select GGUF model (for Chat)")
+        btn_model.clicked.connect(self._pick_model)
+        f.addWidget(btn_model)
 
         # ── Core args ─────────────────────────────────────────────────
-        core = ttk.LabelFrame(f, text="Core Arguments", padding=8)
-        core.pack(fill=tk.X, pady=6)
-        core.columnconfigure(1, weight=1)
-        core.columnconfigure(3, weight=1)
-        core.columnconfigure(5, weight=1)
+        core = card("Core Arguments")
+        core_l = QGridLayout(core)
+        core_l.setColumnStretch(1, 1)
+        core_l.setColumnStretch(3, 1)
+        core_l.setColumnStretch(5, 1)
 
-        self.ctx       = tk.StringVar(value="2048")
-        self.threads   = tk.StringVar(value="2")
-        self.n_predict = tk.StringVar(value="-1")
-        self.batch     = tk.StringVar(value="512")
-        self.ubatch    = tk.StringVar(value="512")
-        self.n_gpu     = tk.StringVar(value="0")
+        self.ctx       = QLineEdit("2048")
+        self.threads   = QLineEdit("2")
+        self.n_predict = QLineEdit("-1")
+        self.batch     = QLineEdit("512")
+        self.ubatch    = QLineEdit("512")
+        self.n_gpu     = QLineEdit("0")
 
-        for r, items in enumerate([
-            [("--ctx-size",      self.ctx,      8),
-             ("--threads",       self.threads,  6),
-             ("--n-predict",     self.n_predict,6)],
-            [("--batch-size",    self.batch,    6),
-             ("--ubatch-size",   self.ubatch,   6),   # NEW
-             ("--n-gpu-layers",  self.n_gpu,    6)],
-        ]):
-            for c, (lbl, var, w) in enumerate(items):
-                ttk.Label(core, text=lbl).grid(row=r, column=c*2,   padx=8, pady=4, sticky="e")
-                ttk.Entry(core, textvariable=var, width=w).grid(row=r, column=c*2+1, padx=6, pady=4, sticky="ew")
+        rows = [
+            [("--ctx-size",     self.ctx),
+             ("--threads",      self.threads),
+             ("--n-predict",    self.n_predict)],
+            [("--batch-size",   self.batch),
+             ("--ubatch-size",  self.ubatch),
+             ("--n-gpu-layers", self.n_gpu)],
+        ]
+        for r, items in enumerate(rows):
+            for c, (lbl, widget) in enumerate(items):
+                core_l.addWidget(QLabel(lbl), r, c * 2, Qt.AlignmentFlag.AlignRight)
+                core_l.addWidget(widget, r, c * 2 + 1)
+        f.addWidget(core)
 
-        # ── Chat template (combobox with full list) ───────────────────
-        ct_row = ttk.Frame(f)
-        ct_row.pack(fill=tk.X, pady=4)
-        ttk.Label(ct_row, text="--chat-template:").pack(side=tk.LEFT, padx=8)
-        self.template = tk.StringVar(value="chatml")
-        ttk.Combobox(ct_row, values=_CHAT_TEMPLATES, textvariable=self.template,
-                     width=22).pack(side=tk.LEFT, padx=6)
+        # ── Chat template ────────────────────────────────────────────
+        ct_row = QHBoxLayout()
+        ct_row.addWidget(QLabel("--chat-template:"))
+        self.template = QComboBox()
+        self.template.setEditable(True)
+        self.template.addItems(_CHAT_TEMPLATES)
+        self.template.setCurrentText("chatml")
+        self.template.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        ct_row.addWidget(self.template)
+        f.addLayout(ct_row)
 
         # ── KV cache ─────────────────────────────────────────────────
-        kv = ttk.LabelFrame(f, text="KV Cache  (2025)", padding=8)
-        kv.pack(fill=tk.X, pady=6)
-        self.cache_type_k = tk.StringVar(value="f16")
-        self.cache_type_v = tk.StringVar(value="f16")
-        ttk.Label(kv, text="--cache-type-k").pack(side=tk.LEFT, padx=8)
-        ttk.Combobox(kv, values=KV_CACHE_TYPES, textvariable=self.cache_type_k,
-                     width=8, state="readonly").pack(side=tk.LEFT, padx=4)
-        ttk.Label(kv, text="--cache-type-v").pack(side=tk.LEFT, padx=8)
-        ttk.Combobox(kv, values=KV_CACHE_TYPES, textvariable=self.cache_type_v,
-                     width=8, state="readonly").pack(side=tk.LEFT, padx=4)
+        kv = card("KV Cache  (2025)")
+        kv_l = QHBoxLayout(kv)
+        self.cache_type_k = QComboBox()
+        self.cache_type_k.addItems(KV_CACHE_TYPES)
+        self.cache_type_v = QComboBox()
+        self.cache_type_v.addItems(KV_CACHE_TYPES)
+        kv_l.addWidget(QLabel("--cache-type-k"))
+        kv_l.addWidget(self.cache_type_k)
+        kv_l.addWidget(QLabel("--cache-type-v"))
+        kv_l.addWidget(self.cache_type_v)
+        kv_l.addStretch(1)
+        f.addWidget(kv)
 
         # ── Boolean flags ─────────────────────────────────────────────
-        bf = ttk.LabelFrame(f, text="Flags (checked = enabled)", padding=8)
-        bf.pack(fill=tk.X, pady=6)
-
-        self._bool_flags: dict[str, tk.BooleanVar] = {
-            "--interactive-first":  tk.BooleanVar(value=True),
-            "--conversation":       tk.BooleanVar(value=False),
-            "--jinja":              tk.BooleanVar(value=False),   # NEW
-            "--no-warmup":          tk.BooleanVar(value=False),
-            "--flash-attn":         tk.BooleanVar(value=False),
-            "--mlock":              tk.BooleanVar(value=False),
-            "--no-mmap":            tk.BooleanVar(value=False),
-            "--verbose":            tk.BooleanVar(value=False),
-            "--log-disable":        tk.BooleanVar(value=False),
-            "--special":            tk.BooleanVar(value=False),
-            "--thinking":           tk.BooleanVar(value=False),   # NEW (reasoning models)
-        }
-        items = list(self._bool_flags.items())
+        bf = card("Flags (checked = enabled)")
+        bf_l = QGridLayout(bf)
+        bool_flag_names = [
+            "--interactive-first",
+            "--conversation",
+            "--jinja",
+            "--no-warmup",
+            "--flash-attn",
+            "--mlock",
+            "--no-mmap",
+            "--verbose",
+            "--log-disable",
+            "--special",
+            "--thinking",
+        ]
         cols = 3
-        for i, (flag, var) in enumerate(items):
-            ttk.Checkbutton(bf, text=flag, variable=var).grid(
-                row=i // cols, column=i % cols, padx=14, pady=3, sticky="w"
-            )
+        for i, flag in enumerate(bool_flag_names):
+            cb = QCheckBox(flag)
+            if flag == "--interactive-first":
+                cb.setChecked(True)
+            self._bool_flags[flag] = cb
+            bf_l.addWidget(cb, i // cols, i % cols)
+        f.addWidget(bf)
 
-        # ── Value flags (optional) ────────────────────────────────────
-        vf = ttk.LabelFrame(f, text="Optional Arguments (empty = skip)", padding=8)
-        vf.pack(fill=tk.X, pady=6)
-        vf.columnconfigure(1, weight=1)
-
-        self._val_flags: dict[str, tk.StringVar] = {
-            "--reasoning-budget":  tk.StringVar(),   # NEW (-1=unlimited, 0=off)
-            "--prio":              tk.StringVar(),   # NEW (0-3 thread priority)
-            "--rope-freq-base":    tk.StringVar(),
-            "--rope-freq-scale":   tk.StringVar(),
-            "--repeat-penalty":    tk.StringVar(),
-            "--temp":              tk.StringVar(),
-            "--top-k":             tk.StringVar(),
-            "--top-p":             tk.StringVar(),
-            "--min-p":             tk.StringVar(),
-            "--seed":              tk.StringVar(),
-            "--system-prompt":     tk.StringVar(),
-            "--grammar-file":      tk.StringVar(),
-            "--lora":              tk.StringVar(),
-            "--override-kv":       tk.StringVar(),
-        }
-        for r, (flag, var) in enumerate(self._val_flags.items()):
-            ttk.Label(vf, text=flag).grid(row=r, column=0, padx=8, pady=3, sticky="e")
-            ttk.Entry(vf, textvariable=var).grid(row=r, column=1, padx=6, pady=3, sticky="ew")
+        # ── Value flags (optional) ──────────────────────────────────────
+        vf = card("Optional Arguments (empty = skip)")
+        vf_l = QGridLayout(vf)
+        vf_l.setColumnStretch(1, 1)
+        val_flag_names = [
+            "--reasoning-budget",
+            "--prio",
+            "--rope-freq-base",
+            "--rope-freq-scale",
+            "--repeat-penalty",
+            "--temp",
+            "--top-k",
+            "--top-p",
+            "--min-p",
+            "--seed",
+            "--system-prompt",
+            "--grammar-file",
+            "--lora",
+            "--override-kv",
+        ]
+        for r, flag in enumerate(val_flag_names):
+            le = QLineEdit()
+            self._val_flags[flag] = le
+            vf_l.addWidget(QLabel(flag), r, 0, Qt.AlignmentFlag.AlignRight)
+            vf_l.addWidget(le, r, 1)
+        f.addWidget(vf)
 
         # ── Extra free-text ───────────────────────────────────────────
-        ef = ttk.Frame(f)
-        ef.pack(fill=tk.X, pady=6)
-        ttk.Label(ef, text="Extra args:").pack(side=tk.LEFT, padx=8)
-        self.extra_args = tk.StringVar()
-        ttk.Entry(ef, textvariable=self.extra_args).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        ef = QHBoxLayout()
+        ef.addWidget(QLabel("Extra args:"))
+        self.extra_args = QLineEdit()
+        ef.addWidget(self.extra_args)
+        f.addLayout(ef)
 
         # ── Run button ────────────────────────────────────────────────
-        ttk.Button(f, text="▶ Interactive Chat",
-                   command=self._run_chat).pack(fill=tk.X, pady=14)
+        run_btn = QPushButton("▶  Interactive Chat")
+        run_btn.setObjectName("PrimaryButton")
+        run_btn.clicked.connect(self._run_chat)
+        f.addWidget(run_btn)
+
+        f.addStretch(1)
+
+        outer.addWidget(make_scrollable(content), 1)
 
         # ── Log ───────────────────────────────────────────────────────
-        self.logbox = log_widget(log_host, self.app.log_font)
-        self.logbox.configure(height=6)
-        self.logbox.pack(fill="x", expand=False)
+        self.logbox = LogConsole(height=216)
+        outer.addWidget(self.logbox)
 
         if TERMINAL:
             self._log(f"✔ Terminal: {TERMINAL}")
@@ -211,12 +236,12 @@ class ChatTab:
     # ── actions ──────────────────────────────────────────────────────────
 
     def _log(self, msg: str):
-        append_log(self.logbox, msg + "\n")
+        append_log(self.logbox, msg)
 
     def _pick_bin_dir(self):
-        d = filedialog.askdirectory(
-            title="Select llama.cpp build/bin",
-            initialdir=self.app.bin_dir or os.path.expanduser("~"),
+        d = QFileDialog.getExistingDirectory(
+            self, "Select llama.cpp build/bin",
+            self.app.bin_dir or os.path.expanduser("~"),
         )
         if not d:
             return
@@ -226,17 +251,15 @@ class ChatTab:
             self.app.save()
             self._log(f"✔ bin dir: {d}")
         else:
-            messagebox.showerror(
-                "Error",
+            QMessageBox.critical(
+                self, "Error",
                 f"{exe_name('llama-cli')} not found in selected directory!"
             )
 
     def _pick_model(self):
         initial = _default_browse_dir(getattr(self.app, "chat_model", "")) or models_dir()
-        p = filedialog.askopenfilename(
-            title="Select GGUF model",
-            initialdir=initial,
-            filetypes=[("GGUF", "*.gguf")],
+        p, _ = QFileDialog.getOpenFileName(
+            self, "Select GGUF model", initial, "GGUF (*.gguf)"
         )
         if p:
             self.app.chat_model = p
@@ -245,24 +268,24 @@ class ChatTab:
 
     def _run_chat(self):
         if not self.app.bin_dir:
-            messagebox.showerror("Error", "Select llama.cpp build/bin first!")
+            QMessageBox.critical(self, "Error", "Select llama.cpp build/bin first!")
             return
         if not getattr(self.app, "chat_model", ""):
-            messagebox.showerror("Error", "Select a GGUF model first!")
+            QMessageBox.critical(self, "Error", "Select a GGUF model first!")
             return
 
         cli = resolve_exe("llama-cli", self.app.bin_dir)
         cmd_list = [cli, "-m", self.app.chat_model]
 
-        for flag, var in [
-            ("--ctx-size",      self.ctx),
-            ("--threads",       self.threads),
-            ("--n-predict",     self.n_predict),
-            ("--batch-size",    self.batch),
-            ("--ubatch-size",   self.ubatch),
-            ("--n-gpu-layers",  self.n_gpu),
+        for flag, widget in [
+            ("--ctx-size",     self.ctx),
+            ("--threads",      self.threads),
+            ("--n-predict",    self.n_predict),
+            ("--batch-size",   self.batch),
+            ("--ubatch-size",  self.ubatch),
+            ("--n-gpu-layers", self.n_gpu),
         ]:
-            val = var.get().strip()
+            val = widget.text().strip()
             if val:
                 if flag == "--n-predict" and val == "-1":
                     continue
@@ -273,42 +296,42 @@ class ChatTab:
                 cmd_list += [flag, val]
 
         # Chat template
-        tmpl = self.template.get().strip()
+        tmpl = self.template.currentText().strip()
         if tmpl:
             cmd_list += ["--chat-template", tmpl]
 
         # KV cache types (only if non-default)
-        k_type = self.cache_type_k.get()
-        v_type = self.cache_type_v.get()
+        k_type = self.cache_type_k.currentText()
+        v_type = self.cache_type_v.currentText()
         if k_type and k_type != "f16":
             cmd_list += ["--cache-type-k", k_type]
         if v_type and v_type != "f16":
             cmd_list += ["--cache-type-v", v_type]
 
         # Boolean flags — only if checked AND supported
-        for flag, var in self._bool_flags.items():
-            if var.get():
+        for flag, cb in self._bool_flags.items():
+            if cb.isChecked():
                 if supports_flag(flag, cli):
                     cmd_list.append(flag)
                 else:
                     self._log(f"⚠ {flag} not supported by this build, skipping")
 
         # Value flags — only if non-empty
-        for flag, var in self._val_flags.items():
-            val = var.get().strip()
+        for flag, le in self._val_flags.items():
+            val = le.text().strip()
             if val:
                 cmd_list += [flag, val]
 
         # Extra free-text args
-        if self.extra_args.get().strip():
-            import shlex
-            cmd_list += shlex.split(self.extra_args.get().strip())
+        extra = self.extra_args.text().strip()
+        if extra:
+            cmd_list += shlex.split(extra)
 
         shell_cmd = shell_quote_list(cmd_list)
         self._log(f"▶ {shell_cmd}")
 
         if not launch_in_terminal(shell_cmd, title="llama-cli chat"):
-            messagebox.showerror("Error", "No terminal found!")
+            QMessageBox.critical(self, "Error", "No terminal found!")
 
     # ── public ───────────────────────────────────────────────────────────
 

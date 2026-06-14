@@ -1,70 +1,364 @@
 """
-gui/__init__.py — shared Tkinter helpers used across tabs.
+gui/__init__.py — shared PyQt6 helpers, theme and widgets used across tabs.
+
+Theme: a clean, modern dark UI ("Tokyo-Night"-inspired) applied app-wide via
+a single QSS stylesheet, plus small helper widgets/functions used by every
+tab (scrollable panels, a log console, etc).
 """
 
 from __future__ import annotations
-import tkinter as tk
-from tkinter import ttk
+
+from PyQt6.QtWidgets import (
+    QWidget, QScrollArea, QPlainTextEdit, QGroupBox,
+)
+from PyQt6.QtGui import QFont, QFontDatabase
+from PyQt6.QtCore import Qt
 
 
-def scale_font(base: int) -> int:
-    """Return DPI-scaled font size (96 dpi baseline, clamped 1×–2×)."""
-    try:
-        root = tk._default_root
-        if root is None:
-            return base
-        dpi = root.winfo_fpixels("1i")
-        return max(base, min(int(base * dpi / 96.0), base * 2))
-    except Exception:
-        return base
+# ── Palette ──────────────────────────────────────────────────────────────────
+
+class Colors:
+    BG          = "#1a1b26"
+    BG_ALT      = "#16161e"
+    SURFACE     = "#24283b"
+    SURFACE_ALT = "#2a2e44"
+    BORDER      = "#3b4261"
+    TEXT        = "#c0caf5"
+    TEXT_DIM    = "#8a92b2"
+    ACCENT      = "#7aa2f7"
+    ACCENT_HOV  = "#9ab8ff"
+    ACCENT_DOWN = "#5d7fd6"
+    GREEN       = "#9ece6a"
+    YELLOW      = "#e0af68"
+    RED         = "#f7768e"
+    CYAN        = "#7dcfff"
+    LOG_BG      = "#11121a"
+    LOG_FG      = "#9ece6a"
 
 
-def make_scrollable(parent: tk.Widget) -> tuple[tk.Canvas, ttk.Frame]:
-    """
-    Pack a vertically-scrollable frame inside *parent*.
-    Returns (canvas, inner_frame).
-    Mouse-wheel works on Linux (Button-4/5) and Windows/macOS (MouseWheel).
-    """
-    canvas = tk.Canvas(parent, highlightthickness=0)
-    vsb = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-    canvas.configure(yscrollcommand=vsb.set)
-    vsb.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
+# ── App-wide stylesheet ──────────────────────────────────────────────────────
 
-    inner = ttk.Frame(canvas)
-    win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+STYLE_SHEET = f"""
+* {{
+    outline: none;
+}}
 
-    inner.bind("<Configure>",
-               lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.bind("<Configure>",
-                lambda e: canvas.itemconfig(win_id, width=e.width))
+QMainWindow, QDialog {{
+    background: {Colors.BG};
+}}
 
-    # Cross-platform mouse-wheel
-    canvas.bind_all("<MouseWheel>",
-                    lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
-    canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
-    canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll( 1, "units"))
+QWidget {{
+    color: {Colors.TEXT};
+    font-size: 25px;
+}}
 
-    return canvas, inner
+QToolTip {{
+    background: {Colors.SURFACE_ALT};
+    color: {Colors.TEXT};
+    border: 1px solid {Colors.BORDER};
+    padding: 11px;
+    border-radius: 11px;
+}}
+
+/* Tabs */
+QTabWidget::pane {{
+    border: 1px solid {Colors.BORDER};
+    border-radius: 18px;
+    background: {Colors.BG};
+    top: -1px;
+}}
+
+QTabBar::tab {{
+    background: {Colors.SURFACE};
+    color: {Colors.TEXT_DIM};
+    padding: 18px 40px;
+    margin-right: 7px;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    font-weight: 600;
+}}
+
+QTabBar::tab:selected {{
+    background: {Colors.BG};
+    color: {Colors.ACCENT};
+    border: 1px solid {Colors.BORDER};
+    border-bottom: none;
+}}
+
+QTabBar::tab:hover:!selected {{
+    color: {Colors.TEXT};
+}}
+
+/* Group boxes (cards) */
+QGroupBox {{
+    background: {Colors.SURFACE};
+    border: 1px solid {Colors.BORDER};
+    border-radius: 18px;
+    margin-top: 25px;
+    padding: 25px 18px 18px 18px;
+    font-weight: 600;
+    color: {Colors.CYAN};
+}}
+
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 22px;
+    top: -4px;
+    padding: 0 11px;
+    background: {Colors.SURFACE};
+}}
+
+/* Inputs */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
+    background: {Colors.BG_ALT};
+    border: 1px solid {Colors.BORDER};
+    border-radius: 11px;
+    padding: 9px 14px;
+    color: {Colors.TEXT};
+    selection-background-color: {Colors.ACCENT};
+}}
+
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+    border: 1px solid {Colors.ACCENT};
+}}
+
+QLineEdit:read-only {{
+    color: {Colors.TEXT_DIM};
+}}
+
+QComboBox::drop-down {{
+    border: none;
+    width: 40px;
+}}
+
+QComboBox QAbstractItemView {{
+    background: {Colors.SURFACE_ALT};
+    border: 1px solid {Colors.BORDER};
+    selection-background-color: {Colors.ACCENT};
+    selection-color: {Colors.BG};
+    color: {Colors.TEXT};
+    outline: none;
+}}
+
+/* Buttons */
+QPushButton {{
+    background: {Colors.SURFACE_ALT};
+    border: 1px solid {Colors.BORDER};
+    border-radius: 14px;
+    padding: 14px 29px;
+    font-weight: 600;
+    color: {Colors.TEXT};
+}}
+
+QPushButton:hover {{
+    border: 1px solid {Colors.ACCENT};
+    color: {Colors.ACCENT_HOV};
+}}
+
+QPushButton:pressed {{
+    background: {Colors.ACCENT_DOWN};
+    color: {Colors.BG};
+}}
+
+QPushButton:disabled {{
+    color: {Colors.TEXT_DIM};
+    border: 1px solid {Colors.BORDER};
+    background: {Colors.BG_ALT};
+}}
+
+QPushButton#PrimaryButton {{
+    background: {Colors.ACCENT};
+    border: 1px solid {Colors.ACCENT};
+    color: {Colors.BG};
+    font-weight: 700;
+}}
+
+QPushButton#PrimaryButton:hover {{
+    background: {Colors.ACCENT_HOV};
+    border: 1px solid {Colors.ACCENT_HOV};
+}}
+
+QPushButton#StopButton {{
+    background: {Colors.RED};
+    border: 1px solid {Colors.RED};
+    color: {Colors.BG_ALT};
+    font-weight: 700;
+}}
+
+QPushButton#StopButton:hover {{
+    background: #ff8fa3;
+}}
+
+QPushButton#StopButton:disabled {{
+    background: {Colors.BG_ALT};
+    border: 1px solid {Colors.BORDER};
+    color: {Colors.TEXT_DIM};
+}}
+
+/* Checkboxes */
+QCheckBox {{
+    spacing: 14px;
+    padding: 4px;
+}}
+
+QCheckBox::indicator {{
+    width: 29px;
+    height: 29px;
+    border: 1px solid {Colors.BORDER};
+    border-radius: 7px;
+    background: {Colors.BG_ALT};
+}}
+
+QCheckBox::indicator:checked {{
+    background: {Colors.ACCENT};
+    border: 1px solid {Colors.ACCENT};
+}}
+
+QCheckBox::indicator:hover {{
+    border: 1px solid {Colors.ACCENT};
+}}
+
+/* Labels */
+QLabel {{
+    color: {Colors.TEXT};
+}}
+
+QLabel#Heading {{
+    font-size: 29px;
+    font-weight: 700;
+    color: {Colors.ACCENT};
+}}
+
+QLabel#Muted {{
+    color: {Colors.TEXT_DIM};
+}}
+
+QLabel#Banner {{
+    background: {Colors.SURFACE_ALT};
+    border: 1px solid {Colors.BORDER};
+    border-radius: 14px;
+    padding: 14px 22px;
+    color: {Colors.CYAN};
+    font-weight: 600;
+}}
+
+/* Scroll areas / bars */
+QScrollArea {{
+    border: none;
+    background: transparent;
+}}
+
+QScrollBar:vertical {{
+    background: {Colors.BG};
+    width: 22px;
+    margin: 4px;
+}}
+
+QScrollBar::handle:vertical {{
+    background: {Colors.BORDER};
+    border-radius: 9px;
+    min-height: 43px;
+}}
+
+QScrollBar::handle:vertical:hover {{
+    background: {Colors.ACCENT};
+}}
+
+QScrollBar:horizontal {{
+    background: {Colors.BG};
+    height: 22px;
+    margin: 4px;
+}}
+
+QScrollBar::handle:horizontal {{
+    background: {Colors.BORDER};
+    border-radius: 9px;
+    min-width: 43px;
+}}
+
+QScrollBar::add-line, QScrollBar::sub-line {{
+    height: 0px;
+    width: 0px;
+}}
+
+/* List widget (active servers) */
+QListWidget {{
+    background: {Colors.LOG_BG};
+    border: 1px solid {Colors.BORDER};
+    border-radius: 14px;
+    color: {Colors.GREEN};
+    padding: 7px;
+}}
+
+QListWidget::item {{
+    padding: 7px 11px;
+    border-radius: 7px;
+}}
+
+QListWidget::item:selected {{
+    background: {Colors.ACCENT};
+    color: {Colors.BG};
+}}
+
+/* Log console */
+QPlainTextEdit#LogConsole {{
+    background: {Colors.LOG_BG};
+    color: {Colors.LOG_FG};
+    border: 1px solid {Colors.BORDER};
+    border-radius: 14px;
+    padding: 14px;
+    selection-background-color: {Colors.ACCENT};
+    selection-color: {Colors.BG};
+}}
+"""
 
 
-def log_widget(parent: tk.Widget, font_obj) -> tk.Text:
-    """Create a dark-themed scrollable log Text widget."""
-    from tkinter import scrolledtext
-    box = scrolledtext.ScrolledText(
-        parent,
-        font=font_obj,
-        bg="#1e1e1e",
-        fg="#00ff88",
-        insertbackground="#00ff88",
-        relief="flat",
-        padx=10,
-        pady=10,
-    )
-    return box
+def monospace_font(size: int = 12) -> QFont:
+    """Return the best available monospace font at the given point size."""
+    families = QFontDatabase.families()
+    for name in ("JetBrains Mono", "Cascadia Code", "Fira Code",
+                  "DejaVu Sans Mono", "Consolas", "Monospace"):
+        if name in families:
+            f = QFont(name, size)
+            f.setStyleHint(QFont.StyleHint.Monospace)
+            return f
+    f = QFont()
+    f.setStyleHint(QFont.StyleHint.Monospace)
+    f.setPointSize(size)
+    return f
 
 
-def append_log(widget: tk.Text, text: str) -> None:
-    """Thread-safe append to a log Text widget (call via root.after if needed)."""
-    widget.insert(tk.END, text)
-    widget.see(tk.END)
+def make_scrollable(content: QWidget) -> QScrollArea:
+    """Wrap *content* in a borderless, vertically-scrollable area."""
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    area.setWidget(content)
+    return area
+
+
+class LogConsole(QPlainTextEdit):
+    """Dark, monospaced, read-only log console."""
+
+    def __init__(self, parent: QWidget | None = None, height: int = 260):
+        super().__init__(parent)
+        self.setObjectName("LogConsole")
+        self.setReadOnly(True)
+        self.setFont(monospace_font(22))
+        self.setMaximumBlockCount(5000)
+        self.setMinimumHeight(height)
+        self.setMaximumHeight(height)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+
+
+def append_log(widget: LogConsole, text: str) -> None:
+    """Append *text* (no trailing newline needed) to the log console."""
+    widget.appendPlainText(text.rstrip("\n"))
+    sb = widget.verticalScrollBar()
+    sb.setValue(sb.maximum())
+
+
+def card(title: str) -> QGroupBox:
+    """Create an empty styled QGroupBox; caller sets its layout."""
+    return QGroupBox(title)

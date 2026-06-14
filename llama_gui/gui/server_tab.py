@@ -1,8 +1,8 @@
 """
-server_tab.py — llama-server tab for llama-forge GUI.
+gui/server_tab.py — llama-server tab for llama-forge GUI (PyQt6).
 
-Starts llama-server in the BACKGROUND (no terminal window needed).
-Output is streamed directly into the log box inside the GUI.
+Starts llama-server in the BACKGROUND (no terminal window needed) using
+QProcess. Output is streamed directly into the log box inside the GUI.
 
 PID persistence: when a server is started, its PID is written to a
 ~/.cache/llama-forge/server_<port>.pid file so that GUI restarts can
@@ -23,16 +23,23 @@ Updated for llama.cpp 2025:
 """
 
 from __future__ import annotations
+
 import os
+import shlex
 import sys
-import threading
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+import webbrowser
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
+    QLineEdit, QPushButton, QComboBox, QCheckBox, QFileDialog,
+    QMessageBox, QListWidget,
+)
+from PyQt6.QtCore import Qt, QProcess
 
 from core.llama_detect import models_dir, supports_flag, exe_name, resolve_exe
 from core.quant_logic import KV_CACHE_TYPES
 from utils.terminal import shell_quote_list
-from gui import make_scrollable, log_widget, append_log
+from gui import make_scrollable, LogConsole, append_log, card
 
 # ── PID file helpers ──────────────────────────────────────────────────────────
 
@@ -112,13 +119,12 @@ def _default_browse_dir(current: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ServerTab:
-    def __init__(self, notebook: ttk.Notebook, app):
+class ServerTab(QWidget):
+    def __init__(self, app: QWidget):
+        super().__init__()
         self.app = app
-        self.frame = ttk.Frame(notebook)
-        notebook.add(self.frame, text="Server")
 
-        # port → {"proc": Popen|None, "saved_pid": int|None, "label": str}
+        # port → {"proc": QProcess|None, "saved_pid": int|None, "label": str}
         self._servers: dict[str, dict] = {}
 
         self._build()
@@ -127,173 +133,176 @@ class ServerTab:
     # ── build ────────────────────────────────────────────────────────────
 
     def _build(self):
-        ctrl_host = ttk.Frame(self.frame)
-        ctrl_host.pack(fill="both", expand=True)
-        log_host = ttk.Frame(self.frame, padding=(8, 0, 8, 8))
-        log_host.pack(fill="x", expand=False)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(8)
 
-        _canvas, f = make_scrollable(ctrl_host)
-        f.configure(padding=12)
+        content = QWidget()
+        f = QVBoxLayout(content)
+        f.setContentsMargins(14, 14, 14, 14)
+        f.setSpacing(10)
 
         # ── File selectors ────────────────────────────────────────────
-        ttk.Button(f, text="Select llama.cpp build/bin (Shared)",
-                   command=self._pick_bin_dir).pack(fill=tk.X, pady=6)
-        ttk.Button(f, text="Select GGUF model (for Server)",
-                   command=self._pick_model).pack(fill=tk.X, pady=6)
+        btn_bin = QPushButton("📂  Select llama.cpp build/bin (Shared)")
+        btn_bin.clicked.connect(self._pick_bin_dir)
+        f.addWidget(btn_bin)
+
+        btn_model = QPushButton("📦  Select GGUF model (for Server)")
+        btn_model.clicked.connect(self._pick_model)
+        f.addWidget(btn_model)
 
         # ── Core args ─────────────────────────────────────────────────
-        core = ttk.LabelFrame(f, text="Core Arguments", padding=8)
-        core.pack(fill=tk.X, pady=6)
-        core.columnconfigure(1, weight=1)
-        core.columnconfigure(3, weight=1)
-        core.columnconfigure(5, weight=1)
+        core = card("Core Arguments")
+        core_l = QGridLayout(core)
+        for c in (1, 3, 5):
+            core_l.setColumnStretch(c, 1)
 
-        self.host       = tk.StringVar(value="127.0.0.1")
-        self.port       = tk.StringVar(value="8080")
-        self.ctx        = tk.StringVar(value="2048")
-        self.threads    = tk.StringVar(value="2")
-        self.n_gpu      = tk.StringVar(value="0")
-        self.batch      = tk.StringVar(value="512")
-        self.ubatch     = tk.StringVar(value="512")
-        self.parallel   = tk.StringVar(value="1")
-        self.n_predict  = tk.StringVar(value="-1")
+        self.host       = QLineEdit("127.0.0.1")
+        self.port       = QLineEdit("8080")
+        self.ctx        = QLineEdit("2048")
+        self.threads    = QLineEdit("2")
+        self.n_gpu      = QLineEdit("0")
+        self.batch      = QLineEdit("512")
+        self.ubatch     = QLineEdit("512")
+        self.parallel   = QLineEdit("1")
+        self.n_predict  = QLineEdit("-1")
 
-        for r, items in enumerate([
-            [("--host",         self.host,     16),
-             ("--port",         self.port,      8),
-             ("--ctx-size",     self.ctx,       8)],
-            [("--threads",      self.threads,   6),
-             ("--n-gpu-layers", self.n_gpu,     6),
-             ("--batch-size",   self.batch,     8)],
-            [("--ubatch-size",  self.ubatch,    8),
-             ("--parallel",     self.parallel,  6),
-             ("--n-predict",    self.n_predict, 8)],
-        ]):
-            for c, (lbl, var, w) in enumerate(items):
-                ttk.Label(core, text=lbl).grid(row=r, column=c*2,   padx=8, pady=4, sticky="e")
-                ttk.Entry(core, textvariable=var, width=w).grid(row=r, column=c*2+1, padx=6, pady=4, sticky="ew")
+        rows = [
+            [("--host",        self.host),
+             ("--port",        self.port),
+             ("--ctx-size",    self.ctx)],
+            [("--threads",     self.threads),
+             ("--n-gpu-layers", self.n_gpu),
+             ("--batch-size",  self.batch)],
+            [("--ubatch-size", self.ubatch),
+             ("--parallel",    self.parallel),
+             ("--n-predict",   self.n_predict)],
+        ]
+        for r, items in enumerate(rows):
+            for c, (lbl, widget) in enumerate(items):
+                core_l.addWidget(QLabel(lbl), r, c * 2, Qt.AlignmentFlag.AlignRight)
+                core_l.addWidget(widget, r, c * 2 + 1)
+        f.addWidget(core)
 
-        # ── KV Cache section (NEW) ────────────────────────────────────
-        kv = ttk.LabelFrame(f, text="KV Cache  (2025)", padding=8)
-        kv.pack(fill=tk.X, pady=6)
-        kv.columnconfigure(1, weight=1)
-        kv.columnconfigure(4, weight=1)
+        # ── KV Cache section ────────────────────────────────────────────
+        kv = card("KV Cache  (2025)")
+        kv_l = QGridLayout(kv)
+        kv_l.setColumnStretch(1, 1)
+        kv_l.setColumnStretch(3, 1)
 
-        self.cache_type_k  = tk.StringVar(value="f16")
-        self.cache_type_v  = tk.StringVar(value="f16")
-        self.cache_reuse   = tk.StringVar(value="")
-        self.defrag_thold  = tk.StringVar(value="")
+        self.cache_type_k = QComboBox()
+        self.cache_type_k.addItems(KV_CACHE_TYPES)
+        self.cache_type_v = QComboBox()
+        self.cache_type_v.addItems(KV_CACHE_TYPES)
+        self.cache_reuse  = QLineEdit()
+        self.defrag_thold = QLineEdit()
 
-        ttk.Label(kv, text="--cache-type-k").grid(row=0, column=0, padx=8, pady=4, sticky="e")
-        ttk.Combobox(kv, values=KV_CACHE_TYPES, textvariable=self.cache_type_k,
-                     width=8, state="readonly").grid(row=0, column=1, padx=6, pady=4, sticky="w")
+        kv_l.addWidget(QLabel("--cache-type-k"), 0, 0, Qt.AlignmentFlag.AlignRight)
+        kv_l.addWidget(self.cache_type_k, 0, 1)
+        kv_l.addWidget(QLabel("--cache-type-v"), 0, 2, Qt.AlignmentFlag.AlignRight)
+        kv_l.addWidget(self.cache_type_v, 0, 3)
 
-        ttk.Label(kv, text="--cache-type-v").grid(row=0, column=2, padx=8, pady=4, sticky="e")
-        ttk.Combobox(kv, values=KV_CACHE_TYPES, textvariable=self.cache_type_v,
-                     width=8, state="readonly").grid(row=0, column=3, padx=6, pady=4, sticky="w")
-
-        ttk.Label(kv, text="--cache-reuse (prefix tokens, 0=off)").grid(
-            row=1, column=0, padx=8, pady=4, sticky="e")
-        ttk.Entry(kv, textvariable=self.cache_reuse, width=8).grid(
-            row=1, column=1, padx=6, pady=4, sticky="w")
-
-        ttk.Label(kv, text="--defrag-thold (0.0–1.0, -1=off)").grid(
-            row=1, column=2, padx=8, pady=4, sticky="e")
-        ttk.Entry(kv, textvariable=self.defrag_thold, width=8).grid(
-            row=1, column=3, padx=6, pady=4, sticky="w")
+        kv_l.addWidget(QLabel("--cache-reuse (prefix tokens, 0=off)"), 1, 0, Qt.AlignmentFlag.AlignRight)
+        kv_l.addWidget(self.cache_reuse, 1, 1)
+        kv_l.addWidget(QLabel("--defrag-thold (0.0–1.0, -1=off)"), 1, 2, Qt.AlignmentFlag.AlignRight)
+        kv_l.addWidget(self.defrag_thold, 1, 3)
+        f.addWidget(kv)
 
         # ── Boolean flags ─────────────────────────────────────────────
-        bf = ttk.LabelFrame(f, text="Flags (checked = enabled)", padding=8)
-        bf.pack(fill=tk.X, pady=6)
-
-        self._bool_flags: dict[str, tk.BooleanVar] = {
-            "--flash-attn":              tk.BooleanVar(value=False),
-            "--jinja":                   tk.BooleanVar(value=False),   # NEW
-            "--cont-batching":           tk.BooleanVar(value=False),   # NEW
-            "--kv-unified":              tk.BooleanVar(value=False),   # NEW
-            "--mlock":                   tk.BooleanVar(value=False),
-            "--no-mmap":                 tk.BooleanVar(value=False),
-            "--no-warmup":               tk.BooleanVar(value=False),
-            "--no-prefill-assistant":    tk.BooleanVar(value=False),   # NEW
-            "--ctx-shift-disable":       tk.BooleanVar(value=False),   # NEW
-            "--embedding":               tk.BooleanVar(value=False),
-            "--reranking":               tk.BooleanVar(value=False),
-            "--log-disable":             tk.BooleanVar(value=False),
-            "--verbose":                 tk.BooleanVar(value=False),
-            "--slots-endpoint-disable":  tk.BooleanVar(value=False),
-            "--metrics":                 tk.BooleanVar(value=False),
-        }
-        items = list(self._bool_flags.items())
+        bf = card("Flags (checked = enabled)")
+        bf_l = QGridLayout(bf)
+        bool_flag_names = [
+            "--flash-attn",
+            "--jinja",
+            "--cont-batching",
+            "--kv-unified",
+            "--mlock",
+            "--no-mmap",
+            "--no-warmup",
+            "--no-prefill-assistant",
+            "--ctx-shift-disable",
+            "--embedding",
+            "--reranking",
+            "--log-disable",
+            "--verbose",
+            "--slots-endpoint-disable",
+            "--metrics",
+        ]
+        self._bool_flags: dict[str, QCheckBox] = {}
         cols = 3
-        for i, (flag, var) in enumerate(items):
-            ttk.Checkbutton(bf, text=flag, variable=var).grid(
-                row=i // cols, column=i % cols, padx=14, pady=3, sticky="w"
-            )
+        for i, flag in enumerate(bool_flag_names):
+            cb = QCheckBox(flag)
+            self._bool_flags[flag] = cb
+            bf_l.addWidget(cb, i // cols, i % cols)
+        f.addWidget(bf)
 
-        # ── Value flags (optional) ────────────────────────────────────
-        vf = ttk.LabelFrame(f, text="Optional Arguments (empty = skip)", padding=8)
-        vf.pack(fill=tk.X, pady=6)
-        vf.columnconfigure(1, weight=1)
-
-        self._val_flags: dict[str, tk.StringVar] = {
-            "--api-key":           tk.StringVar(),
-            "--chat-template":     tk.StringVar(),
-            "--system-prompt":     tk.StringVar(),
-            "--slot-save-path":    tk.StringVar(),        # NEW
-            "--reasoning-budget":  tk.StringVar(),        # NEW (-1=unlimited, 0=off)
-            "--think":             tk.StringVar(),        # NEW (deepseek / none)
-            "--prio":              tk.StringVar(),        # NEW (0-3 thread priority)
-            "--tensor-split":      tk.StringVar(),        # NEW (e.g. "2,1" multi-GPU)
-            "--rope-freq-base":    tk.StringVar(),
-            "--rope-freq-scale":   tk.StringVar(),
-            "--override-kv":       tk.StringVar(),
-            "--lora":              tk.StringVar(),
-            "--path":              tk.StringVar(),
-            "--ssl-key-file":      tk.StringVar(),
-            "--ssl-cert-file":     tk.StringVar(),
-        }
-        for r, (flag, var) in enumerate(self._val_flags.items()):
-            ttk.Label(vf, text=flag).grid(row=r, column=0, padx=8, pady=3, sticky="e")
-            ttk.Entry(vf, textvariable=var).grid(row=r, column=1, padx=6, pady=3, sticky="ew")
+        # ── Value flags (optional) ──────────────────────────────────────
+        vf = card("Optional Arguments (empty = skip)")
+        vf_l = QGridLayout(vf)
+        vf_l.setColumnStretch(1, 1)
+        val_flag_names = [
+            "--api-key",
+            "--chat-template",
+            "--system-prompt",
+            "--slot-save-path",
+            "--reasoning-budget",
+            "--think",
+            "--prio",
+            "--tensor-split",
+            "--rope-freq-base",
+            "--rope-freq-scale",
+            "--override-kv",
+            "--lora",
+            "--path",
+            "--ssl-key-file",
+            "--ssl-cert-file",
+        ]
+        self._val_flags: dict[str, QLineEdit] = {}
+        for r, flag in enumerate(val_flag_names):
+            le = QLineEdit()
+            self._val_flags[flag] = le
+            vf_l.addWidget(QLabel(flag), r, 0, Qt.AlignmentFlag.AlignRight)
+            vf_l.addWidget(le, r, 1)
+        f.addWidget(vf)
 
         # ── Extra free-text ───────────────────────────────────────────
-        ef = ttk.Frame(f)
-        ef.pack(fill=tk.X, pady=6)
-        ttk.Label(ef, text="Extra args:").pack(side=tk.LEFT, padx=8)
-        self.extra_args = tk.StringVar()
-        ttk.Entry(ef, textvariable=self.extra_args).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        ef = QHBoxLayout()
+        ef.addWidget(QLabel("Extra args:"))
+        self.extra_args = QLineEdit()
+        ef.addWidget(self.extra_args)
+        f.addLayout(ef)
 
         # ── Active Servers list ───────────────────────────────────────
-        sf = ttk.LabelFrame(f, text="Active Servers  (select → Stop)", padding=8)
-        sf.pack(fill=tk.X, pady=6)
-        sf.columnconfigure(0, weight=1)
-
-        self._server_listbox = tk.Listbox(
-            sf, height=4, selectmode=tk.SINGLE,
-            font=self.app.log_font, bg="#1e1e1e", fg="#a9dc76",
-            selectbackground="#3d3d3d", selectforeground="#ffffff",
-            activestyle="none",
-        )
-        self._server_listbox.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        sf = card("Active Servers  (select → Stop)")
+        sf_l = QVBoxLayout(sf)
+        self._server_list = QListWidget()
+        self._server_list.setFixedHeight(200)
+        sf_l.addWidget(self._server_list)
+        f.addWidget(sf)
 
         # ── Buttons ───────────────────────────────────────────────────
-        btn_row = ttk.Frame(f)
-        btn_row.pack(fill=tk.X, pady=14)
-        self._start_btn = ttk.Button(btn_row, text="▶ Start Server",
-                                     command=self._run_server)
-        self._start_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        self._stop_btn = ttk.Button(btn_row, text="⏹ Stop Selected",
-                                    command=self._stop_server, state="disabled")
-        self._stop_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        ttk.Button(btn_row, text="🌐 Open Web UI",
-                   command=self._open_webui).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 0))
+        btn_row = QHBoxLayout()
+        self._start_btn = QPushButton("▶  Start Server")
+        self._start_btn.setObjectName("PrimaryButton")
+        self._start_btn.clicked.connect(self._run_server)
+        self._stop_btn = QPushButton("⏹  Stop Selected")
+        self._stop_btn.setObjectName("StopButton")
+        self._stop_btn.setEnabled(False)
+        self._stop_btn.clicked.connect(self._stop_server)
+        self._webui_btn = QPushButton("🌐  Open Web UI")
+        self._webui_btn.clicked.connect(self._open_webui)
+        btn_row.addWidget(self._start_btn)
+        btn_row.addWidget(self._stop_btn)
+        btn_row.addWidget(self._webui_btn)
+        f.addLayout(btn_row)
+
+        f.addStretch(1)
+
+        outer.addWidget(make_scrollable(content), 1)
 
         # ── Log ───────────────────────────────────────────────────────
-        self.logbox = log_widget(log_host, self.app.log_font)
-        self.logbox.configure(height=10)
-        self.logbox.pack(fill="x", expand=False)
+        self.logbox = LogConsole(height=324)
+        outer.addWidget(self.logbox)
 
         self._log("✔ Server runs in background — output appears here")
 
@@ -301,27 +310,26 @@ class ServerTab:
 
     def _listbox_label(self, port: str) -> str:
         entry = self._servers.get(port, {})
-        proc = entry.get("proc")
+        proc: QProcess | None = entry.get("proc")
         saved_pid = entry.get("saved_pid")
-        pid = proc.pid if (proc and proc.poll() is None) else saved_pid
-        return f"port {port}  PID {pid}  [{entry.get('label', '')}]"
+        if proc is not None and proc.state() != QProcess.ProcessState.NotRunning:
+            pid = proc.processId()
+        else:
+            pid = saved_pid
+        return f"port {port}   PID {pid}   [{entry.get('label', '')}]"
 
     def _refresh_listbox(self):
-        self._server_listbox.delete(0, tk.END)
+        self._server_list.clear()
         for port in list(self._servers.keys()):
-            self._server_listbox.insert(tk.END, self._listbox_label(port))
-        if self._servers:
-            self._stop_btn.config(state="normal")
-        else:
-            self._stop_btn.config(state="disabled")
+            self._server_list.addItem(self._listbox_label(port))
+        self._stop_btn.setEnabled(bool(self._servers))
 
     def _selected_port(self) -> str | None:
-        sel = self._server_listbox.curselection()
-        if not sel:
+        row = self._server_list.currentRow()
+        if row < 0:
             return None
         ports = list(self._servers.keys())
-        idx = sel[0]
-        return ports[idx] if idx < len(ports) else None
+        return ports[row] if row < len(ports) else None
 
     # ── state restore ─────────────────────────────────────────────────────
 
@@ -334,7 +342,7 @@ class ServerTab:
                 pid = _read_pid(port)
                 if pid and _pid_alive(pid):
                     self._servers[port] = {"proc": None, "saved_pid": pid,
-                                           "label": "restored"}
+                                            "label": "restored"}
                     self._log(f"⚡ Server already running on port {port} (PID {pid})")
                 else:
                     if pid:
@@ -346,12 +354,12 @@ class ServerTab:
     # ── actions ──────────────────────────────────────────────────────────
 
     def _log(self, msg: str):
-        append_log(self.logbox, msg + "\n")
+        append_log(self.logbox, msg)
 
     def _pick_bin_dir(self):
-        d = filedialog.askdirectory(
-            title="Select llama.cpp build/bin",
-            initialdir=self.app.bin_dir or os.path.expanduser("~"),
+        d = QFileDialog.getExistingDirectory(
+            self, "Select llama.cpp build/bin",
+            self.app.bin_dir or os.path.expanduser("~"),
         )
         if not d:
             return
@@ -361,17 +369,15 @@ class ServerTab:
             self.app.save()
             self._log(f"✔ bin dir: {d}")
         else:
-            messagebox.showerror(
-                "Error",
+            QMessageBox.critical(
+                self, "Error",
                 f"{exe_name('llama-server')} not found in selected directory!"
             )
 
     def _pick_model(self):
         initial = _default_browse_dir(getattr(self.app, "server_model", "")) or models_dir()
-        p = filedialog.askopenfilename(
-            title="Select GGUF model",
-            initialdir=initial,
-            filetypes=[("GGUF", "*.gguf")],
+        p, _ = QFileDialog.getOpenFileName(
+            self, "Select GGUF model", initial, "GGUF (*.gguf)"
         )
         if p:
             self.app.server_model = p
@@ -380,17 +386,17 @@ class ServerTab:
 
     def _run_server(self):
         if not self.app.bin_dir:
-            messagebox.showerror("Error", "Select llama.cpp build/bin first!")
+            QMessageBox.critical(self, "Error", "Select llama.cpp build/bin first!")
             return
         if not getattr(self.app, "server_model", ""):
-            messagebox.showerror("Error", "Select a GGUF model first!")
+            QMessageBox.critical(self, "Error", "Select a GGUF model first!")
             return
 
-        port = self.port.get().strip() or "8080"
+        port = self.port.text().strip() or "8080"
 
         if port in self._servers:
-            messagebox.showwarning(
-                "Already running",
+            QMessageBox.warning(
+                self, "Already running",
                 f"A server is already tracked on port {port}.\n"
                 "Stop it first or use a different port.",
             )
@@ -400,7 +406,7 @@ class ServerTab:
         cmd_list = [srv, "-m", self.app.server_model]
 
         # Core args
-        for flag, var in [
+        for flag, widget in [
             ("--host",         self.host),
             ("--port",         self.port),
             ("--ctx-size",     self.ctx),
@@ -411,111 +417,102 @@ class ServerTab:
             ("--parallel",     self.parallel),
             ("--n-predict",    self.n_predict),
         ]:
-            val = var.get().strip()
+            val = widget.text().strip()
             if val:
                 if flag == "--n-predict" and val == "-1":
                     continue
                 if flag == "--n-gpu-layers" and val == "0":
                     continue
                 if flag == "--ubatch-size" and val == "512":
-                    continue   # default — skip to keep command shorter
+                    continue
                 cmd_list += [flag, val]
 
         # KV cache flags (only add if non-default)
-        k_type = self.cache_type_k.get()
-        v_type = self.cache_type_v.get()
+        k_type = self.cache_type_k.currentText()
+        v_type = self.cache_type_v.currentText()
         if k_type and k_type != "f16":
             cmd_list += ["--cache-type-k", k_type]
         if v_type and v_type != "f16":
             cmd_list += ["--cache-type-v", v_type]
-        if self.cache_reuse.get().strip():
-            cmd_list += ["--cache-reuse", self.cache_reuse.get().strip()]
-        if self.defrag_thold.get().strip():
-            cmd_list += ["--defrag-thold", self.defrag_thold.get().strip()]
+        if self.cache_reuse.text().strip():
+            cmd_list += ["--cache-reuse", self.cache_reuse.text().strip()]
+        if self.defrag_thold.text().strip():
+            cmd_list += ["--defrag-thold", self.defrag_thold.text().strip()]
 
         # Boolean flags
-        for flag, var in self._bool_flags.items():
-            if var.get():
+        for flag, cb in self._bool_flags.items():
+            if cb.isChecked():
                 if supports_flag(flag, srv):
                     cmd_list.append(flag)
                 else:
                     self._log(f"⚠ {flag} not supported by this build, skipping")
 
         # Value flags
-        for flag, var in self._val_flags.items():
-            val = var.get().strip()
+        for flag, le in self._val_flags.items():
+            val = le.text().strip()
             if val:
                 cmd_list += [flag, val]
 
         # Extra args
-        if self.extra_args.get().strip():
-            import shlex
-            cmd_list += shlex.split(self.extra_args.get().strip())
+        extra = self.extra_args.text().strip()
+        if extra:
+            cmd_list += shlex.split(extra)
 
         self._log(f"▶ {shell_quote_list(cmd_list)}")
 
-        import subprocess as _sp
+        proc = QProcess(self)
+        proc.setProgram(cmd_list[0])
+        proc.setArguments(cmd_list[1:])
+        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        proc.readyReadStandardOutput.connect(lambda p=port: self._on_ready_read(p))
+        proc.errorOccurred.connect(lambda err, p=port: self._on_error(p, err))
+        proc.finished.connect(lambda code, status, p=port: self._on_server_done(p, code))
 
-        kwargs: dict = dict(
-            stdout=_sp.PIPE,
-            stderr=_sp.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        if sys.platform == "win32":
-            kwargs["creationflags"] = _sp.CREATE_NO_WINDOW
-
-        try:
-            proc = _sp.Popen(cmd_list, **kwargs)
-        except FileNotFoundError:
-            messagebox.showerror(
-                "Error",
-                f"{exe_name('llama-server')} not found:\n{srv}"
+        proc.start()
+        if not proc.waitForStarted(3000):
+            QMessageBox.critical(
+                self, "Error",
+                f"{exe_name('llama-server')} not found or failed to start:\n{srv}"
             )
             return
 
         model_short = os.path.basename(self.app.server_model)
-        _write_pid(port, proc.pid)
-        self._servers[port] = {"proc": proc, "saved_pid": None,
-                                "label": model_short}
-        self._log(f"✔ PID {proc.pid} saved (port {port})")
+        _write_pid(port, proc.processId())
+        self._servers[port] = {"proc": proc, "saved_pid": None, "label": model_short}
+        self._log(f"✔ PID {proc.processId()} saved (port {port})")
         self._refresh_listbox()
 
-        def _reader(p=proc, _port=port):
-            try:
-                for raw in p.stdout:
-                    line = raw.rstrip("\n")
-                    if line:
-                        self.frame.after(0, lambda l=line: append_log(self.logbox, l + "\n"))
-                p.wait()
-                rc = p.returncode
-            except Exception:
-                import traceback
-                tb = traceback.format_exc()
-                self.frame.after(0, lambda: append_log(self.logbox, f"\n❌ Exception:\n{tb}\n"))
-                rc = -1
-            finally:
-                _clear_pid(_port)
-                self.frame.after(0, self._on_server_done, _port, rc)
+    def _on_ready_read(self, port: str):
+        entry = self._servers.get(port)
+        if not entry:
+            return
+        proc: QProcess | None = entry.get("proc")
+        if proc is None:
+            return
+        data = proc.readAllStandardOutput().data().decode("utf-8", errors="replace")
+        for line in data.splitlines():
+            if line:
+                append_log(self.logbox, line)
 
-        threading.Thread(target=_reader, daemon=True).start()
+    def _on_error(self, port: str, error):
+        self._log(f"⚠ QProcess error on port {port}: {error}")
 
     def _stop_server(self):
         port = self._selected_port()
         if port is None:
-            port = self.port.get().strip() or "8080"
+            port = self.port.text().strip() or "8080"
 
         entry = self._servers.get(port)
         if entry is None:
             self._log(f"⚠ No tracked server on port {port}.")
             return
 
-        proc      = entry.get("proc")
+        proc: QProcess | None = entry.get("proc")
         saved_pid = entry.get("saved_pid")
 
-        if proc and proc.poll() is None:
+        if proc is not None and proc.state() != QProcess.ProcessState.NotRunning:
             proc.terminate()
-            self._log(f"⏹ Sent terminate to server on port {port} (PID {proc.pid}).")
+            self._log(f"⏹ Sent terminate to server on port {port} (PID {proc.processId()}).")
         elif saved_pid and _pid_alive(saved_pid):
             _terminate_pid(saved_pid)
             self._log(f"⏹ Sent terminate to PID {saved_pid} (port {port}).")
@@ -530,18 +527,23 @@ class ServerTab:
 
     def _on_server_done(self, port: str, rc: int):
         self._log(f"\n--- server on port {port} exited (code {rc}) ---\n")
+        _clear_pid(port)
         self._servers.pop(port, None)
         self._refresh_listbox()
 
     def _open_webui(self):
-        host = self.host.get().strip() or "127.0.0.1"
-        port = self._selected_port() or self.port.get().strip() or "8080"
-        url  = f"http://{host}:{port}"
+        host = self.host.text().strip() or "127.0.0.1"
+        port = self._selected_port() or self.port.text().strip() or "8080"
+        url = f"http://{host}:{port}"
         self._log(f"🌐 Opening: {url}")
-        import webbrowser
         webbrowser.open(url)
 
     # ── public ───────────────────────────────────────────────────────────
 
     def startup_log(self, msg: str):
         self._log(msg)
+
+    def on_app_close(self):
+        """Best-effort: just leave background servers running (PID file
+        persists so the GUI can reattach on next launch)."""
+        pass

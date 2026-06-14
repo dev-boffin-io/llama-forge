@@ -31,17 +31,9 @@ if(NOT EXISTS "${PROJECT_ROOT}/convert_hf_to_gguf.py")
         "Is llama-gui/ inside the llama.cpp source tree?")
 endif()
 
-# ── tkinter check ─────────────────────────────────────────────────────────
-execute_process(
-    COMMAND "${PYTHON_BIN}" -c "import tkinter"
-    RESULT_VARIABLE _tk_result
-)
-if(NOT _tk_result EQUAL 0)
-    message(FATAL_ERROR
-        "tkinter not available.\n"
-        "  Debian/Ubuntu: sudo apt install python3-tk")
-endif()
-message(STATUS "tkinter     : OK")
+# ── GUI toolkit ───────────────────────────────────────────────────────────
+# PyQt6 is installed into the build venv below (no system package needed).
+message(STATUS "GUI toolkit : PyQt6 (installed into build venv)")
 
 # ── venv module check ─────────────────────────────────────────────────────
 execute_process(
@@ -96,7 +88,7 @@ if(NOT _pip_upgrade EQUAL 0)
     message(WARNING "pip upgrade failed — continuing anyway.")
 endif()
 
-# ── Install PyInstaller ───────────────────────────────────────────────────
+# ── Install PyInstaller + PyQt6 ───────────────────────────────────────────
 message(STATUS "Installing PyInstaller...")
 execute_process(
     COMMAND "${VENV_PIP}" install pyinstaller --quiet
@@ -106,6 +98,16 @@ if(NOT _pi_install EQUAL 0)
     message(FATAL_ERROR "PyInstaller installation failed.")
 endif()
 message(STATUS "PyInstaller : OK")
+
+message(STATUS "Installing PyQt6...")
+execute_process(
+    COMMAND "${VENV_PIP}" install PyQt6 --quiet
+    RESULT_VARIABLE _qt_install
+)
+if(NOT _qt_install EQUAL 0)
+    message(FATAL_ERROR "PyQt6 installation failed.")
+endif()
+message(STATUS "PyQt6       : OK")
 
 # ── Build with PyInstaller ────────────────────────────────────────────────
 # CMake list = no shell quoting issues, no line-continuation bug
@@ -119,6 +121,9 @@ set(_pi_args
     --workpath "${BUILD_DIR}"
     --name     "${APP_NAME}"
     --paths    "${SCRIPT_DIR}"
+    --hidden-import PyQt6.QtCore
+    --hidden-import PyQt6.QtGui
+    --hidden-import PyQt6.QtWidgets
     "${ENTRY}"
 )
 
