@@ -10,7 +10,7 @@ llama-forge is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp). The
 
 **Contributions to this fork are accepted for:**
 
-- `llama_gui/` — Python/tkinter GUI frontend
+- `llama_gui/` — Python/PyQt6 GUI frontend
 - `CMakeLists.txt` — GUI build system improvements
 - Documentation (`README.md`, `AGENTS.md`, etc.)
 - Termux/Android ARM64 compatibility fixes
@@ -26,12 +26,14 @@ llama-forge is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp). The
 git clone https://github.com/dev-boffin-io/llama-forge.git
 cd llama-forge
 
-# Build
+# Build (creates venv, installs PyQt6 + PyInstaller, compiles GUI binary)
 cmake -B build -S .
 cmake --build build
 
-# Run GUI
-./llama-gui
+# Run GUI directly from source (without the compiled binary)
+cd llama_gui
+pip install -r requirements.txt
+python app.py
 ```
 
 ---
@@ -41,8 +43,10 @@ cmake --build build
 ### Python (llama_gui/)
 - Follow PEP 8
 - Use type hints where practical
-- Keep tkinter widgets organized per tab file
-- No external dependencies beyond Python stdlib
+- Keep PyQt6 widgets organized per tab file — one file per tab
+- Use `QProcess` for all subprocess management; do **not** use `subprocess` + `threading`
+- Use `LogConsole` from `gui/__init__.py` for any log output widget
+- No external dependencies beyond Python stdlib and `PyQt6` — keep `requirements.txt` minimal
 
 ### Shell Scripts
 - Use `#!/usr/bin/env bash`
@@ -54,7 +58,7 @@ cmake --build build
 ## 🌿 Branch Naming
 
 | Type | Pattern | Example |
-|------|---------|---------|
+|------|---------|---------| 
 | Feature | `feature/name` | `feature/model-browser` |
 | Bug Fix | `fix/name` | `fix/chat-crash` |
 | Docs | `docs/name` | `docs/termux-guide` |

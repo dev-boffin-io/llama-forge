@@ -10,7 +10,13 @@ Coding:
 - When in doubt, always refer to the CONTRIBUTING.md file of the project
 - When referencing issues or PRs in comments, use the format:
   - C/C++ code: `// ref: <url>`
-  - Other (CMake, etc.): `# ref: <url>`
+  - Other (CMake, Python, etc.): `# ref: <url>`
+- The GUI stack is **PyQt6 exclusively** — never use tkinter, never use `subprocess` + `threading` in the GUI layer
+- For all subprocess management in the GUI, use `QProcess` with Qt signals/slots
+- Active server list must use `QListWidget` — do not replace with other widgets
+- The `LogConsole` widget and `make_scrollable()` helper live in `gui/__init__.py` — import from there
+- The converter (`gui/converter.py`) is a `QDialog` — do not convert it to a standalone window
+- `app.py` uses `QMainWindow` + `QTabWidget`; the "Convert Tools" button lives in the main window toolbar
 
 Pull requests (PRs):
 - New branch names are prefixed with "gg/"
@@ -28,6 +34,7 @@ Commits:
 
 Resources (read on demand):
 - [CONTRIBUTING.md](CONTRIBUTING.md)
+- [AGENTS.md](AGENTS.md)
 - [Build documentation](docs/build.md)
 - [Server usage documentation](tools/server/README.md)
 - [Server development documentation](tools/server/README-dev.md)

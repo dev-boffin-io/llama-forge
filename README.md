@@ -11,7 +11,7 @@
 [![Pinned](https://img.shields.io/badge/Pinned-b9297-yellow)](https://github.com/ggml-org/llama.cpp/releases/tag/b9297)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen)](https://github.com/dev-boffin-io/llama-forge)
 
-**llama-forge** is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp) extended with a native tkinter GUI frontend for running, quantizing, converting, and serving large language models locally — with full support for Debian/Linux, Termux/Android ARM64, and Windows.
+**llama-forge** is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp) extended with a native **PyQt6** GUI frontend for running, quantizing, converting, and serving large language models locally — with full support for Debian/Linux, Termux/Android ARM64, and Windows.
 
 </div>
 
@@ -46,7 +46,7 @@
 
 ## Overview
 
-llama-forge combines the full power of the llama.cpp inference engine with a user-friendly graphical interface. No command-line knowledge required to run, quantize, serve, or convert GGUF models. Designed for developers and power users who want a local, private, and efficient LLM workflow.
+llama-forge combines the full power of the llama.cpp inference engine with a user-friendly graphical interface built on **PyQt6**. No command-line knowledge required to run, quantize, serve, or convert GGUF models. Designed for developers and power users who want a local, private, and efficient LLM workflow.
 
 ---
 
@@ -56,12 +56,12 @@ llama-forge combines the full power of the llama.cpp inference engine with a use
 |--------|-------------|
 | 💬 **Chat** | Interactive chat with local GGUF models via `llama-cli` |
 | ⚖️ **Quantize** | Quantize models to Q4_K_M, Q5_K_M, Q8_0, SIMD-optimised variants, and more |
-| 🌐 **Server** | Launch and manage `llama-server` instances with a full argument GUI |
-| 🔄 **Convert** | Convert HuggingFace models to GGUF format |
+| 🌐 **Server** | Launch and manage `llama-server` instances with a full argument GUI; powered by Qt-native `QProcess` |
+| 🔄 **Convert** | Convert HuggingFace models to GGUF format via a `QDialog` with dynamic panel visibility |
 | 🔍 **Auto-detect** | Automatically finds llama.cpp binaries and models |
 | 🧠 **RAM-aware** | Displays available system RAM to guide model selection |
 | 📌 **PID Persistence** | Server processes survive GUI restarts — stop them any time |
-| 🖥️ **Multi-server** | Run multiple `llama-server` instances on different ports simultaneously |
+| 🖥️ **Multi-server** | Run multiple `llama-server` instances on different ports simultaneously; tracked in a `QListWidget` |
 | 🗂️ **KV Cache Control** | Configure `--cache-type-k/v`, `--cache-reuse`, `--defrag-thold` from the GUI |
 | 🤔 **Reasoning Model Support** | `--thinking`, `--jinja`, `--reasoning-budget` flags for CoT/reasoning models |
 | 📦 **Portable Binary** | Ships as a single self-contained binary via PyInstaller |
@@ -82,17 +82,18 @@ llama-forge combines the full power of the llama.cpp inference engine with a use
 - `cmake` >= 3.14
 - `gcc` / `g++` >= 12
 - `Python` >= 3.10
-- `python3-tk` (tkinter)
+- `PyQt6` >= 6.6
 
 ### Debian / Linux
 ```bash
-sudo apt install cmake gcc g++ python3 python3-tk git
+sudo apt install cmake gcc g++ python3 python3-pip git
+pip install PyQt6>=6.6
 ```
 
 ### Termux / Android ARM64
 ```bash
 pkg install cmake clang python git
-pip install pyinstaller
+pip install PyQt6 pyinstaller
 ```
 
 ### Windows
@@ -171,7 +172,7 @@ cmake --build build
 ./llama-gui
 ```
 
-> The build system automatically creates a Python virtual environment, installs PyInstaller, and compiles the GUI into a standalone binary.
+> The build system automatically creates a Python virtual environment, installs PyInstaller and PyQt6, and compiles the GUI into a standalone binary.
 
 ---
 
@@ -195,9 +196,9 @@ Or use the installed desktop entry from your application menu.
 
 Select a GGUF model and configure core inference parameters (`--ctx-size`, `--threads`, `--n-gpu-layers`, `--batch-size`, `--ubatch-size`, etc.). Boolean flags like `--flash-attn`, `--mlock`, `--jinja`, and `--thinking` can be toggled via checkboxes. `llama-cli` launches in an external terminal with the fully composed command.
 
-**`--chat-template`** is now a searchable Combobox populated with all built-in templates supported by llama.cpp 2025: `chatml`, `llama3`, `llama4`, `mistral-v1/v3/v7`, `gemma`, `phi3`, `phi4`, `deepseek`/`deepseek2`/`deepseek3`, `qwen2`, `qwen3`, `command-r`, `falcon3`, `granite`, `grok-2`, and many more.
+**`--chat-template`** is a searchable ComboBox populated with all built-in templates supported by llama.cpp 2025: `chatml`, `llama3`, `llama4`, `mistral-v1/v3/v7`, `gemma`, `phi3`, `phi4`, `deepseek`/`deepseek2`/`deepseek3`, `qwen2`, `qwen3`, `command-r`, `falcon3`, `granite`, `grok-2`, and many more.
 
-**KV Cache** settings (`--cache-type-k` / `--cache-type-v`) are exposed as readonly Comboboxes supporting `f16`, `f32`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, `q5_1`. Only non-default values are passed to the binary.
+**KV Cache** settings (`--cache-type-k` / `--cache-type-v`) are exposed as readonly ComboBoxes supporting `f16`, `f32`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, `q5_1`. Only non-default values are passed to the binary.
 
 **Reasoning model flags**: `--thinking` enables CoT output for reasoning models; `--reasoning-budget` sets the token budget (-1 = unlimited, 0 = off); `--prio` controls thread priority (0–3).
 
@@ -211,7 +212,7 @@ Select a source GGUF and a target quantization type. A RAM-based recommendation 
 
 ### Server Tab
 
-The Server tab launches and manages `llama-server` entirely in the background — no terminal window needed. Server stdout/stderr streams directly into the in-GUI log box.
+The Server tab launches and manages `llama-server` entirely in the background using Qt-native **`QProcess`** — no terminal window or manual threading needed. Server stdout/stderr streams directly into the in-GUI `LogConsole`.
 
 #### Core Arguments
 
@@ -227,7 +228,7 @@ The Server tab launches and manages `llama-server` entirely in the background �
 | `--parallel` | `1` | Concurrent request slots |
 | `--n-predict` | `-1` | Max tokens per response |
 
-#### KV Cache  (2025)
+#### KV Cache (2025)
 
 | Argument | Default | Description |
 |---|---|---|
@@ -256,13 +257,13 @@ An **Extra args** free-text field is also available for any flags not covered ab
 
 #### Multi-Server Support
 
-Multiple `llama-server` instances can run simultaneously on different ports. Each running instance appears in the **Active Servers** list as:
+Multiple `llama-server` instances can run simultaneously on different ports. Each running instance appears in the **Active Servers** `QListWidget` as:
 
 ```
 port 8080  PID 12345  [model-name.gguf]
 ```
 
-Select a server from the list and press **⏹ Stop Selected** to send `SIGTERM` to that process. Press **🌐 Open Web UI** to open the selected server's built-in chat interface in a browser.
+Select a server from the list and press **⏹ Stop Selected** to terminate that `QProcess`. Press **🌐 Open Web UI** to open the selected server's built-in chat interface in a browser.
 
 #### PID Persistence
 
@@ -272,7 +273,7 @@ When a server is started, its PID is written to `~/.cache/llama-forge/server_<po
 
 ### Convert Tools
 
-Opens a separate **Convert Tools** window (top-right button, outside the main tabs). Point to a HuggingFace model directory and convert it to GGUF using `convert_hf_to_gguf.py`. Additional converters for legacy GGML and LoRA formats are also available.
+Opens a **Convert Tools** `QDialog` (via the top-right button on the main window). Point to a HuggingFace model directory or LoRA adapter and convert it to GGUF using `convert_hf_to_gguf.py`. Panel visibility toggles dynamically based on the selected conversion script — HF-specific and LoRA-specific fields appear only when relevant.
 
 ---
 
@@ -280,16 +281,17 @@ Opens a separate **Convert Tools** window (top-right button, outside the main ta
 
 ```
 llama-forge/
-├── llama_gui/                  # GUI frontend (Python/tkinter)
-│   ├── app.py                  # Entry point & App class
+├── llama_gui/                  # GUI frontend (Python/PyQt6)
+│   ├── app.py                  # Entry point — QMainWindow + QTabWidget + "Convert Tools" button
 │   ├── CMakeLists.txt          # GUI build script
+│   ├── requirements.txt        # Python deps (PyQt6>=6.6, pyinstaller)
 │   ├── llama_gui.png           # App icon
 │   ├── gui/                    # Tab UI components
-│   │   ├── __init__.py         # Shared widget helpers
-│   │   ├── chat_tab.py         # Chat (SAFE) tab
-│   │   ├── quant_tab.py        # Quantize tab
-│   │   ├── server_tab.py       # Server tab (multi-server, PID persistence)
-│   │   └── converter.py        # Convert Tools window
+│   │   ├── __init__.py         # Shared QSS themes, LogConsole, make_scrollable()
+│   │   ├── chat_tab.py         # Chat tab (PyQt6 widgets)
+│   │   ├── quant_tab.py        # Quantize tab (PyQt6 widgets)
+│   │   ├── server_tab.py       # Server tab (QProcess, QListWidget)
+│   │   └── converter.py        # Convert Tools QDialog (dynamic panel visibility)
 │   ├── core/                   # Business logic
 │   │   ├── llama_detect.py     # Root detection, config persistence
 │   │   ├── quant_logic.py      # Quant type definitions, arg builder
@@ -297,8 +299,7 @@ llama-forge/
 │   └── utils/                  # Helpers
 │       ├── ram_detect.py       # System RAM detection
 │       ├── gguf_info.py        # GGUF metadata reader
-│       ├── terminal.py         # Terminal launcher helpers
-│       └── subprocess_stream.py # Non-blocking stdout streaming
+│       └── terminal.py         # Terminal launcher helpers
 ├── src/                        # Upstream llama.cpp C++ source
 ├── ggml/                       # Upstream ggml backend
 ├── tools/                      # llama-server, llama-cli, llama-quantize, etc.

@@ -58,3 +58,4 @@ We follow **responsible disclosure**. Please allow us time to investigate and re
 - Vulnerabilities in upstream llama.cpp (report to ggml-org)
 - Issues requiring physical access to the device
 - Social engineering attacks
+- PyQt6 or Qt framework vulnerabilities (report to the Qt Project)
