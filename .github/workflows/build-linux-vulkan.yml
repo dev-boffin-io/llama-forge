@@ -1,4 +1,4 @@
-name: Build — Linux ARM64
+name: Build — Linux Vulkan
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -19,7 +19,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build \
-            libopenblas-dev \
+            libvulkan-dev vulkan-tools glslc \
             python3 python3-pip python3-venv \
             libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
             libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
@@ -32,17 +32,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python deps
-        run: pip install PyQt6>=6.6 pyinstaller
+        run: pip install "PyQt6>=6.6" pyinstaller
 
-      # ── llama.cpp full build ───────────────────────────────────
+      # ── llama.cpp Vulkan build ─────────────────────────────────
       - name: Configure CMake
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_EXAMPLES=ON \
-            -DGGML_BLAS=ON \
-            -DGGML_BLAS_VENDOR=OpenBLAS \
+            -DGGML_VULKAN=ON \
             -DGGML_NATIVE=OFF
 
       - name: Build
@@ -84,16 +83,10 @@ jobs:
           for f in tools/convert_hf_to_gguf.py convert_hf_to_gguf.py; do
             [ -f "$f" ] && cp "$f" dist-release/ && break
           done
-          for f in convert_lora_to_gguf.py tools/convert_lora_to_gguf.py; do
-            [ -f "$f" ] && cp "$f" dist-release/ && break
-          done
-          for f in convert_llama_ggml_to_gguf.py tools/convert_llama_ggml_to_gguf.py; do
-            [ -f "$f" ] && cp "$f" dist-release/ && break
-          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: llama-forge-linux-arm64
+          name: llama-forge-linux-vulkan-amd64
           path: dist-release/
           if-no-files-found: warn

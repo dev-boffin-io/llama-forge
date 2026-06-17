@@ -34,9 +34,16 @@ CUSTOM_FILES=(
 
 # Custom GitHub Actions workflows to preserve
 CUSTOM_WORKFLOWS=(
-    "build-windows.yml"
     "build-linux-amd64.yml"
     "build-linux-arm64.yml"
+    "build-linux-cuda.yml"
+    "build-linux-vulkan.yml"
+    "build-windows.yml"
+    "build-windows-cuda.yml"
+    "build-windows-vulkan.yml"
+    "build-macos.yml"
+    "build-android-termux.yml"
+    "release.yml"
 )
 
 # ── Colors ────────────────────────────────────────────────────

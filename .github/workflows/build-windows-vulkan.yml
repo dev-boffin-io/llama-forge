@@ -1,0 +1,92 @@
+name: Build — Windows Vulkan
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Vulkan SDK
+        run: |
+          $url = "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe"
+          Invoke-WebRequest -Uri $url -OutFile vulkan-sdk.exe
+          Start-Process -FilePath vulkan-sdk.exe -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install "PyQt6>=6.6" pyinstaller
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLAMA_BUILD_TESTS=OFF `
+            -DLLAMA_BUILD_EXAMPLES=ON `
+            -DGGML_VULKAN=ON `
+            -DGGML_NATIVE=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package llama_gui
+        run: |
+          pyinstaller --onefile --noconsole `
+            --name llama-forge-gui `
+            --add-data "llama_gui/llama_gui.png;llama_gui" `
+            --hidden-import PyQt6 `
+            --hidden-import PyQt6.QtWidgets `
+            --hidden-import PyQt6.QtCore `
+            --hidden-import PyQt6.QtGui `
+            llama_gui/app.py
+
+      - name: Collect binaries
+        run: |
+          $out = "dist-release"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $bins = @(
+            "llama-cli", "llama-server", "llama-quantize",
+            "llama-bench", "llama-imatrix", "llama-perplexity",
+            "llama-gguf-split", "llama-gguf-hash", "llama-gguf",
+            "llama-export-lora", "llama-cvector-generator",
+            "llama-tts", "llama-mtmd-cli", "llama-rpc-server",
+            "llama-tokenize", "llama-speculative", "llama-speculative-simple",
+            "llama-embedding"
+          )
+          foreach ($b in $bins) {
+            foreach ($p in @("build\bin\$b.exe","build\bin\Release\$b.exe")) {
+              if (Test-Path $p) { Copy-Item $p $out; break }
+            }
+          }
+
+          Copy-Item dist\llama-forge-gui.exe $out
+
+          foreach ($f in @("tools\convert_hf_to_gguf.py","convert_hf_to_gguf.py")) {
+            if (Test-Path $f) { Copy-Item $f $out; break }
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-forge-windows-vulkan-x64
+          path: dist-release/
+          if-no-files-found: warn

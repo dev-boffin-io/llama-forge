@@ -1,0 +1,112 @@
+name: Build — Windows CUDA
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Windows CUDA ${{ matrix.cuda_short }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: "12.4.0"
+            cuda_short: "cu124"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          cuda: ${{ matrix.cuda }}
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev"]'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install "PyQt6>=6.6" pyinstaller
+
+      # ── llama.cpp CUDA build ───────────────────────────────────
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLAMA_BUILD_TESTS=OFF `
+            -DLLAMA_BUILD_EXAMPLES=ON `
+            -DGGML_CUDA=ON `
+            -DGGML_NATIVE=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # ── llama_gui PyInstaller ──────────────────────────────────
+      - name: Package llama_gui
+        run: |
+          pyinstaller --onefile --noconsole `
+            --name llama-forge-gui `
+            --add-data "llama_gui/llama_gui.png;llama_gui" `
+            --hidden-import PyQt6 `
+            --hidden-import PyQt6.QtWidgets `
+            --hidden-import PyQt6.QtCore `
+            --hidden-import PyQt6.QtGui `
+            llama_gui/app.py
+
+      # ── Collect artifacts ──────────────────────────────────────
+      - name: Collect binaries
+        run: |
+          $out = "dist-release"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $bins = @(
+            "llama-cli", "llama-server", "llama-quantize",
+            "llama-bench", "llama-imatrix", "llama-perplexity",
+            "llama-gguf-split", "llama-gguf-hash", "llama-gguf",
+            "llama-export-lora", "llama-cvector-generator",
+            "llama-tts", "llama-mtmd-cli", "llama-rpc-server",
+            "llama-tokenize", "llama-speculative", "llama-speculative-simple",
+            "llama-embedding"
+          )
+          foreach ($b in $bins) {
+            foreach ($p in @("build\bin\$b.exe", "build\bin\Release\$b.exe")) {
+              if (Test-Path $p) { Copy-Item $p $out; break }
+            }
+          }
+
+          # CUDA runtime DLLs (needed at runtime)
+          $cudaPath = $env:CUDA_PATH
+          if ($cudaPath) {
+            foreach ($dll in @("cublas64_12.dll","cublasLt64_12.dll","cudart64_12.dll")) {
+              $src = Join-Path $cudaPath "bin\$dll"
+              if (Test-Path $src) { Copy-Item $src $out }
+            }
+          }
+
+          Copy-Item dist\llama-forge-gui.exe $out
+
+          foreach ($f in @("tools\convert_hf_to_gguf.py","convert_hf_to_gguf.py")) {
+            if (Test-Path $f) { Copy-Item $f $out; break }
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-forge-windows-${{ matrix.cuda_short }}-x64
+          path: dist-release/
+          if-no-files-found: warn

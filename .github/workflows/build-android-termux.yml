@@ -1,0 +1,90 @@
+name: Build — Android (Termux)
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Android/Termux-এ PyQt6 GUI PyInstaller দিয়ে pack করা যায় না।
+# এই workflow শুধু llama.cpp binaries build করে cross-compile দিয়ে।
+# GUI Termux-এ সরাসরি `python app.py` দিয়ে চালাতে হবে।
+#
+# Cross-compile: Ubuntu host → Android ARM64 target (NDK)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      NDK_VERSION: r27c
+      API_LEVEL: 33
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Android NDK ────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build unzip wget
+
+      - name: Download Android NDK
+        run: |
+          wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" \
+            -O ndk.zip
+          unzip -q ndk.zip
+          echo "NDK_HOME=$PWD/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
+
+      # ── llama.cpp cross-compile → Android ARM64 ───────────────
+      - name: Configure CMake (Android ARM64)
+        run: |
+          cmake -B build-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="${NDK_HOME}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-${API_LEVEL} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=ON \
+            -DGGML_NATIVE=OFF \
+            -DBUILD_SHARED_LIBS=OFF
+
+      - name: Build
+        run: cmake --build build-android --parallel $(nproc)
+
+      # ── Collect binaries ───────────────────────────────────────
+      - name: Collect binaries
+        run: |
+          mkdir -p dist-release
+
+          BINS=(
+            llama-cli llama-server llama-quantize
+            llama-bench llama-imatrix llama-perplexity
+            llama-gguf-split llama-gguf-hash llama-gguf
+            llama-export-lora llama-cvector-generator
+            llama-tts llama-mtmd-cli llama-rpc-server
+            llama-tokenize llama-speculative llama-speculative-simple
+            llama-embedding
+          )
+          for bin in "${BINS[@]}"; do
+            [ -f "build-android/bin/$bin" ] && cp "build-android/bin/$bin" dist-release/
+          done
+
+          # GUI চালানোর instructions
+          printf '# llama-forge GUI on Termux\n\nThe GUI binary is not bundled here.\nRun it directly from Python on Termux:\n\n  pkg install python\n  pip install PyQt6 pyinstaller\n  cd llama-forge\n  python llama_gui/app.py\n\nCopy the binaries from this folder to $PREFIX/bin/ or point the GUI to this folder.\n' \
+            > dist-release/TERMUX_GUI_SETUP.md
+
+          for f in tools/convert_hf_to_gguf.py convert_hf_to_gguf.py; do
+            [ -f "$f" ] && cp "$f" dist-release/ && break
+          done
+          for f in convert_lora_to_gguf.py tools/convert_lora_to_gguf.py; do
+            [ -f "$f" ] && cp "$f" dist-release/ && break
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-forge-android-arm64
+          path: dist-release/
+          if-no-files-found: warn

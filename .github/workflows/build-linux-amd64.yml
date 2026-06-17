@@ -13,17 +13,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Dependencies ──────────────────────────────────────────
+      # ── Dependencies ───────────────────────────────────────────
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build \
             libopenblas-dev \
-            python3 python3-pip python3-tk \
-            python3-venv
+            python3 python3-pip python3-venv \
+            libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-xkb1 libxkbcommon-x11-0 \
+            libgl1-mesa-glx libglib2.0-0 libdbus-1-3
 
-      # ── llama.cpp full build ──────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install PyQt6>=6.6 pyinstaller
+
+      # ── llama.cpp full build ───────────────────────────────────
       - name: Configure CMake
         run: |
           cmake -B build -G Ninja \
@@ -37,42 +48,47 @@ jobs:
       - name: Build
         run: cmake --build build --parallel $(nproc)
 
-      # ── llama_gui PyInstaller ─────────────────────────────────
-      - name: Install PyInstaller
-        run: pip3 install --break-system-packages pyinstaller requests || \
-             pip3 install pyinstaller requests
-
+      # ── llama_gui PyInstaller ──────────────────────────────────
       - name: Package llama_gui
         run: |
           pyinstaller --onefile \
             --name llama-forge-gui \
             --add-data "llama_gui/llama_gui.png:llama_gui" \
-            --hidden-import tkinter \
-            --hidden-import tkinter.ttk \
-            --hidden-import tkinter.scrolledtext \
-            --hidden-import tkinter.messagebox \
-            --hidden-import tkinter.filedialog \
+            --hidden-import PyQt6 \
+            --hidden-import PyQt6.QtWidgets \
+            --hidden-import PyQt6.QtCore \
+            --hidden-import PyQt6.QtGui \
             llama_gui/app.py
 
-      # ── Collect artifacts ─────────────────────────────────────
+      # ── Collect artifacts ──────────────────────────────────────
       - name: Collect binaries
         run: |
           mkdir -p dist-release
 
-          for bin in llama-cli llama-server llama-quantize \
-                     llama-gguf-split llama-imatrix llama-bench \
-                     llama-perplexity llama-cvector-generator; do
-            if [ -f "build/bin/$bin" ]; then
-              cp "build/bin/$bin" dist-release/
-            fi
+          BINS=(
+            llama-cli llama-server llama-quantize
+            llama-bench llama-imatrix llama-perplexity
+            llama-gguf-split llama-gguf-hash llama-gguf
+            llama-export-lora llama-cvector-generator
+            llama-tts llama-mtmd-cli llama-rpc-server
+            llama-tokenize llama-speculative llama-speculative-simple
+            llama-embedding
+          )
+          for bin in "${BINS[@]}"; do
+            [ -f "build/bin/$bin" ] && cp "build/bin/$bin" dist-release/
           done
 
-          # GUI
           cp dist/llama-forge-gui dist-release/
           chmod +x dist-release/llama-forge-gui
 
-          # Python converter
+          # Python converter scripts
           for f in tools/convert_hf_to_gguf.py convert_hf_to_gguf.py; do
+            [ -f "$f" ] && cp "$f" dist-release/ && break
+          done
+          for f in convert_lora_to_gguf.py tools/convert_lora_to_gguf.py; do
+            [ -f "$f" ] && cp "$f" dist-release/ && break
+          done
+          for f in convert_llama_ggml_to_gguf.py tools/convert_llama_ggml_to_gguf.py; do
             [ -f "$f" ] && cp "$f" dist-release/ && break
           done
 
