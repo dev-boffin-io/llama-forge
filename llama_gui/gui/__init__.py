@@ -89,6 +89,31 @@ QTabBar::tab:hover:!selected {{
     color: {Colors.TEXT};
 }}
 
+/* Tab bar scroll buttons (← →) when tabs overflow */
+QTabBar::scroller {{
+    width: 40px;
+}}
+
+QTabBar QToolButton {{
+    background: {Colors.SURFACE_ALT};
+    border: 1px solid {Colors.BORDER};
+    border-radius: 9px;
+    color: {Colors.ACCENT};
+    font-size: 18px;
+    padding: 4px 6px;
+    margin: 4px 2px;
+}}
+
+QTabBar QToolButton:hover {{
+    background: {Colors.ACCENT};
+    color: {Colors.BG};
+}}
+
+QTabBar QToolButton:disabled {{
+    color: {Colors.TEXT_DIM};
+    background: {Colors.BG_ALT};
+}}
+
 /* Group boxes (cards) */
 QGroupBox {{
     background: {Colors.SURFACE};
@@ -309,6 +334,20 @@ QPlainTextEdit#LogConsole {{
     padding: 14px;
     selection-background-color: {Colors.ACCENT};
     selection-color: {Colors.BG};
+}}
+
+/* Main toolbar (holds Convert Tools button) */
+QToolBar {{
+    background: {Colors.BG_ALT};
+    border-bottom: 1px solid {Colors.BORDER};
+    spacing: 6px;
+    padding: 4px 8px;
+}}
+
+QToolBar::separator {{
+    background: {Colors.BORDER};
+    width: 1px;
+    margin: 4px 6px;
 }}
 """
 

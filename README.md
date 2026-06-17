@@ -36,6 +36,12 @@
   - [Chat Tab](#chat-tab)
   - [Quantize Tab](#quantize-tab)
   - [Server Tab](#server-tab)
+  - [Benchmark Tab](#benchmark-tab)
+  - [Imatrix Tab](#imatrix-tab)
+  - [Perplexity Tab](#perplexity-tab)
+  - [GGUF Tools Tab](#gguf-tools-tab)
+  - [LoRA & CVector Tab](#lora--cvector-tab)
+  - [Extra Tools Tab](#extra-tools-tab)
   - [Convert Tools](#convert-tools)
 - [Project Structure](#project-structure)
 - [Upstream Sync](#upstream-sync)
@@ -46,7 +52,7 @@
 
 ## Overview
 
-llama-forge combines the full power of the llama.cpp inference engine with a user-friendly graphical interface built on **PyQt6**. No command-line knowledge required to run, quantize, serve, or convert GGUF models. Designed for developers and power users who want a local, private, and efficient LLM workflow.
+llama-forge combines the full power of the llama.cpp inference engine with a user-friendly graphical interface built on **PyQt6**. No command-line knowledge required to run, quantize, serve, benchmark, or convert GGUF models. Designed for developers and power users who want a local, private, and efficient LLM workflow.
 
 ---
 
@@ -55,17 +61,22 @@ llama-forge combines the full power of the llama.cpp inference engine with a use
 | Feature | Description |
 |--------|-------------|
 | 💬 **Chat** | Interactive chat with local GGUF models via `llama-cli` |
-| ⚖️ **Quantize** | Quantize models to Q4_K_M, Q5_K_M, Q8_0, SIMD-optimised variants, and more |
-| 🌐 **Server** | Launch and manage `llama-server` instances with a full argument GUI; powered by Qt-native `QProcess` |
-| 🔄 **Convert** | Convert HuggingFace models to GGUF format via a `QDialog` with dynamic panel visibility |
+| 🧪 **Quantize** | Quantize models to Q4_K_M, Q5_K_M, Q8_0, IQ variants, and more via `llama-quantize` |
+| 🖥️ **Server** | Launch and manage `llama-server` instances with full argument GUI; powered by `QProcess` |
+| 📊 **Benchmark** | Measure inference speed (tokens/sec) via `llama-bench` with live output |
+| 🧮 **Imatrix** | Generate importance matrix files for IQ quants via `llama-imatrix` |
+| 📐 **Perplexity** | Measure model quality (PPL score) via `llama-perplexity`; supports hellaswag, winogrande, KL-divergence modes |
+| 🗂️ **GGUF Tools** | Split/merge GGUF shards (`llama-gguf-split`), verify file integrity (`llama-gguf-hash`), read/edit metadata (`llama-gguf`) |
+| 🔗 **LoRA & CVector** | Merge LoRA adapters into base models (`llama-export-lora`); generate control vectors (`llama-cvector-generator`) |
+| 🛠️ **Extra Tools** | TTS (`llama-tts`), multimodal/vision chat (`llama-mtmd-cli`), RPC server (`llama-rpc-server`), tokenizer (`llama-tokenize`), speculative decoding (`llama-speculative`) |
+| 🔄 **Convert** | Convert HuggingFace models to GGUF via a `QDialog` with dynamic panel visibility |
 | 🔍 **Auto-detect** | Automatically finds llama.cpp binaries and models |
-| 🧠 **RAM-aware** | Displays available system RAM to guide model selection |
+| 🧠 **RAM-aware** | Displays available system RAM to guide model and quant selection |
 | 📌 **PID Persistence** | Server processes survive GUI restarts — stop them any time |
-| 🖥️ **Multi-server** | Run multiple `llama-server` instances on different ports simultaneously; tracked in a `QListWidget` |
+| 🖥️ **Multi-server** | Run multiple `llama-server` instances on different ports simultaneously |
 | 🗂️ **KV Cache Control** | Configure `--cache-type-k/v`, `--cache-reuse`, `--defrag-thold` from the GUI |
 | 🤔 **Reasoning Model Support** | `--thinking`, `--jinja`, `--reasoning-budget` flags for CoT/reasoning models |
 | 📦 **Portable Binary** | Ships as a single self-contained binary via PyInstaller |
-| 🖥️ **Desktop Entry** | Auto-installs `.desktop` launcher and icon |
 | 📱 **ARM64 Support** | Fully tested on Termux/Android ARM64 |
 
 ---
@@ -124,8 +135,6 @@ cmake -B build -S .
 cmake --build build
 ```
 
-The binary `llama-gui` will be placed at the project root after a successful build.
-
 ### Windows
 
 **Option A — Download pre-built binary (recommended)**
@@ -134,7 +143,7 @@ Download `llama-forge-windows-x64.zip` from [GitHub Actions Artifacts](https://g
 
 **Option B — Build from source**
 
-Open **Developer PowerShell for VS 2022** (or run `x64 Native Tools Command Prompt`):
+Open **Developer PowerShell for VS 2022**:
 
 ```powershell
 git clone https://github.com/dev-boffin-io/llama-forge.git
@@ -149,26 +158,15 @@ cmake -B build -G Ninja `
 cmake --build build --parallel
 ```
 
-The binary `llama-forge-gui.exe` will be placed at the project root.
-
-> **Note:** Run cmake from a Visual Studio Developer shell so that `cl.exe` and `ninja` are on the PATH.
-
 ---
 
 ## 🔨 Building from Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/dev-boffin-io/llama-forge.git
 cd llama-forge
-
-# Configure
 cmake -B build -S .
-
-# Build everything including the GUI
 cmake --build build
-
-# Run the GUI
 ./llama-gui
 ```
 
@@ -178,8 +176,6 @@ cmake --build build
 
 ## 🚀 Usage
 
-Launch the GUI:
-
 ```bash
 # Linux / Android
 ./llama-gui
@@ -188,92 +184,123 @@ Launch the GUI:
 llama-forge-gui.exe
 ```
 
-Or use the installed desktop entry from your application menu.
-
 ---
 
 ### Chat Tab
 
-Select a GGUF model and configure core inference parameters (`--ctx-size`, `--threads`, `--n-gpu-layers`, `--batch-size`, `--ubatch-size`, etc.). Boolean flags like `--flash-attn`, `--mlock`, `--jinja`, and `--thinking` can be toggled via checkboxes. `llama-cli` launches in an external terminal with the fully composed command.
+Select a GGUF model and configure core inference parameters (`--ctx-size`, `--threads`, `--n-gpu-layers`, `--batch-size`, `--ubatch-size`). Boolean flags like `--flash-attn`, `--mlock`, `--jinja`, and `--thinking` can be toggled via checkboxes. `llama-cli` launches in an external terminal.
 
-**`--chat-template`** is a searchable ComboBox populated with all built-in templates supported by llama.cpp 2025: `chatml`, `llama3`, `llama4`, `mistral-v1/v3/v7`, `gemma`, `phi3`, `phi4`, `deepseek`/`deepseek2`/`deepseek3`, `qwen2`, `qwen3`, `command-r`, `falcon3`, `granite`, `grok-2`, and many more.
+**`--chat-template`** supports all built-in llama.cpp 2025 templates: `chatml`, `llama3/4`, `mistral-v1/v3/v7`, `gemma`, `phi3/4`, `deepseek`/`deepseek2/3`, `qwen2/3`, `command-r`, `falcon3`, `granite`, `grok-2`, and many more.
 
-**KV Cache** settings (`--cache-type-k` / `--cache-type-v`) are exposed as readonly ComboBoxes supporting `f16`, `f32`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, `q5_1`. Only non-default values are passed to the binary.
+**KV Cache** settings (`--cache-type-k/v`) support `f16`, `f32`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, `q5_1`.
 
-**Reasoning model flags**: `--thinking` enables CoT output for reasoning models; `--reasoning-budget` sets the token budget (-1 = unlimited, 0 = off); `--prio` controls thread priority (0–3).
+**Reasoning flags**: `--thinking`, `--reasoning-budget`, `--prio`.
 
 ---
 
 ### Quantize Tab
 
-Select a source GGUF and a target quantization type. A RAM-based recommendation banner suggests the best quant type for your system. Supports all standard `llama-quantize` types including `Q4_K_M`, `Q5_K_M`, `Q6_K`, `Q8_0`, full `F16`/`F32`/`BF16`, and SIMD-optimised variants `q4_0_4_4`, `q4_0_4_8`, `q4_0_8_8` (ARM NEON / AVX-512 / AVX-VNNI). Output and token-embedding tensor types are configurable via dropdown. The built command is shown in the log before execution.
+Select a source GGUF and target quant type. A RAM-based recommendation banner suggests the best type for your system. Supports all `llama-quantize` types: standard K-quants (`Q4_K_M`, `Q5_K_M`, `Q6_K`, `Q8_0`), float types (`F16`, `BF16`, `F32`), IQ types (`iq2_xxs` through `iq4_nl`), TQ types (`tq1_0`, `tq2_0`), and SIMD-optimised variants (`q4_0_4_4`, `q4_0_4_8`, `q4_0_8_8`).
+
+The `--imatrix` field points to a `.dat` file generated by the **Imatrix tab** for significantly better quality at low bit rates.
 
 ---
 
 ### Server Tab
 
-The Server tab launches and manages `llama-server` entirely in the background using Qt-native **`QProcess`** — no terminal window or manual threading needed. Server stdout/stderr streams directly into the in-GUI `LogConsole`.
+Launches and manages `llama-server` in the background via `QProcess`. Multiple instances can run on different ports simultaneously. Each appears in the **Active Servers** list as `port 8080  PID 12345  [model-name.gguf]`. PID files persist across GUI restarts.
 
-#### Core Arguments
+Supports all 2025 server flags: KV cache control, `--cont-batching`, `--kv-unified`, `--jinja`, `--embedding`, `--reranking`, `--metrics`, SSL, slot management, and more.
 
-| Argument | Default | Description |
-|---|---|---|
-| `--host` | `127.0.0.1` | Bind address |
-| `--port` | `8080` | Listening port |
-| `--ctx-size` | `2048` | Context window size |
-| `--threads` | `2` | CPU thread count |
-| `--n-gpu-layers` | `0` | GPU offload layers |
-| `--batch-size` | `512` | Prompt batch size |
-| `--ubatch-size` | `512` | Physical batch size (micro-batch) |
-| `--parallel` | `1` | Concurrent request slots |
-| `--n-predict` | `-1` | Max tokens per response |
+---
 
-#### KV Cache (2025)
+### Benchmark Tab
 
-| Argument | Default | Description |
-|---|---|---|
-| `--cache-type-k` | `f16` | Key cache quantization type |
-| `--cache-type-v` | `f16` | Value cache quantization type |
-| `--cache-reuse` | *(off)* | Prefix token reuse threshold (0 = off) |
-| `--defrag-thold` | *(off)* | KV cache defrag threshold (0.0–1.0, -1 = off) |
+Runs `llama-bench` in the background and streams results live. Configure prompt token count (`-p`), generation count (`-n`), GPU layers (`-ngl`), threads, batch sizes, and repetitions. Output format: `md` (default), `json`, `jsonl`, `csv`, `sql`.
 
-Supported cache types: `f16` · `f32` · `bf16` · `q8_0` · `q4_0` · `q4_1` · `iq4_nl` · `q5_0` · `q5_1`
+---
 
-#### Boolean Flags
+### Imatrix Tab
 
-Toggle via checkboxes (unchecked = not passed):
+Generates an importance matrix (`.dat` file) from a calibration dataset using `llama-imatrix`. The output file is used in the **Quantize tab** (`--imatrix` field) to produce significantly higher-quality IQ quantizations (`iq2_xxs`, `iq3_xs`, etc.).
 
-`--flash-attn` · `--mlock` · `--no-mmap` · `--no-warmup` · `--embedding` · `--reranking` · `--log-disable` · `--verbose` · `--slots-endpoint-disable` · `--metrics` · `--jinja` · `--cont-batching` · `--kv-unified` · `--no-prefill-assistant` · `--ctx-shift-disable`
+Configure calibration data file, output path, context size, threads, GPU layers, chunk count, and PPL options.
 
-> Flags not supported by the current build are automatically skipped with a warning in the log.
+---
 
-#### Optional Arguments
+### Perplexity Tab
 
-Leave empty to skip. Supported fields:
+Measures model quality using `llama-perplexity`. Supports multiple evaluation modes:
 
-`--api-key` · `--chat-template` · `--system-prompt` · `--rope-freq-base` · `--rope-freq-scale` · `--override-kv` · `--lora` · `--path` · `--ssl-key-file` · `--ssl-cert-file` · `--slot-save-path` · `--tensor-split` · `--reasoning-budget` · `--prio`
+| Mode | Description |
+|------|-------------|
+| perplexity (default) | Standard PPL measurement on a text dataset |
+| hellaswag | HellaSwag benchmark (multiple choice) |
+| winogrande | Winogrande benchmark |
+| multiple-choice | Generic multiple-choice evaluation |
+| kl-divergence | KL divergence between two model outputs |
 
-An **Extra args** free-text field is also available for any flags not covered above.
+Useful for comparing quality before and after quantization. Lower PPL = better quality.
 
-#### Multi-Server Support
+---
 
-Multiple `llama-server` instances can run simultaneously on different ports. Each running instance appears in the **Active Servers** `QListWidget` as:
+### GGUF Tools Tab
 
-```
-port 8080  PID 12345  [model-name.gguf]
-```
+Three sub-tools for working with GGUF files directly:
 
-Select a server from the list and press **⏹ Stop Selected** to terminate that `QProcess`. Press **🌐 Open Web UI** to open the selected server's built-in chat interface in a browser.
+**🔀 Split / Merge** (`llama-gguf-split`)
+Split large GGUF files into smaller shards (`--split-max-size`, `--split-max-tensors`) or merge shards back into a single file (`--merge`).
 
-#### PID Persistence
+**#️⃣ Hash** (`llama-gguf-hash`)
+Verify GGUF file integrity with SHA256 (default), SHA1, UUID, or xxHash. Useful for confirming downloads are uncorrupted.
 
-When a server is started, its PID is written to `~/.cache/llama-forge/server_<port>.pid`. If the GUI is closed while a server is running, reopening the GUI will detect the surviving process and restore it to the Active Servers list — the Stop button remains functional across sessions.
+**🏷️ Metadata** (`llama-gguf`)
+Read and edit GGUF KV metadata fields (e.g. `general.name`, `tokenizer.chat_template`). Supports read, write (`--set`), and remove (`--rm`) operations.
+
+---
+
+### LoRA & CVector Tab
+
+**📤 Export LoRA** (`llama-export-lora`)
+Merge a LoRA adapter GGUF into a base model GGUF to produce a standalone merged model. Configure `--lora-scaled` factor and thread count.
+
+**🎛️ Control Vector** (`llama-cvector-generator`)
+Generate control vectors from positive/negative prompt pairs using PCA. Control vectors steer model behaviour (tone, style, verbosity) at inference time via `--control-vector` in the Chat or Server tab.
+
+---
+
+### Extra Tools Tab
+
+Five additional tools in sub-tabs:
+
+**🔊 TTS** (`llama-tts`)
+Text-to-speech synthesis using OuteTTS-compatible GGUF models. Configure TTS model, optional vocoder, speaker file, and output WAV path.
+
+**🖼️ Multimodal** (`llama-mtmd-cli`)
+Vision/audio chat supporting LLaVA, Qwen2-VL, Gemma4V, InternVL, Pixtral, MiniCPM-V, and 20+ other multimodal architectures. Attach images or audio files alongside text prompts.
+
+**🌐 RPC Server** (`llama-rpc-server`)
+Start a remote GPU offload server. On the main machine, use `-rpc <host>:<port>` with `llama-server` or `llama-cli` to offload layers to this machine. Runs in background via `QProcess`.
+
+**🔢 Tokenize** (`llama-tokenize`)
+Tokenize arbitrary text with a given model's vocabulary. Shows token IDs, token count, and supports `--no-bos`. Useful for prompt engineering and context budget planning.
+
+**⚡ Speculative** (`llama-speculative` / `llama-speculative-simple`)
+Speculative decoding: a small draft model generates candidate tokens which the large target model verifies in parallel — significantly faster generation at no quality cost. Configure draft model, target model, draft length, and context size.
 
 ---
 
 ### Convert Tools
 
-Opens a **Convert Tools** `QDialog` (via the top-right button on the main window). Point to a HuggingFace model directory or LoRA adapter and convert it to GGUF using `convert_hf_to_gguf.py`. Panel visibility toggles dynamically based on the selected conversion script — HF-specific and LoRA-specific fields appear only when relevant.
+Opens a **Convert Tools** dialog (toolbar button). Converts HuggingFace model directories or LoRA adapters to GGUF format. Supported scripts:
+
+| Script | Use case |
+|--------|----------|
+| `convert_hf_to_gguf.py` | HuggingFace model → GGUF |
+| `convert_llama_ggml_to_gguf.py` | Legacy GGML format → GGUF |
+| `convert_lora_to_gguf.py` | LoRA adapter → GGUF |
+
+HF-specific and LoRA-specific option panels show/hide dynamically based on the selected script.
 
 ---
 
@@ -281,56 +308,51 @@ Opens a **Convert Tools** `QDialog` (via the top-right button on the main window
 
 ```
 llama-forge/
-├── llama_gui/                  # GUI frontend (Python/PyQt6)
-│   ├── app.py                  # Entry point — QMainWindow + QTabWidget + "Convert Tools" button
-│   ├── CMakeLists.txt          # GUI build script
-│   ├── requirements.txt        # Python deps (PyQt6>=6.6, pyinstaller)
-│   ├── llama_gui.png           # App icon
-│   ├── gui/                    # Tab UI components
-│   │   ├── __init__.py         # Shared QSS themes, LogConsole, make_scrollable()
-│   │   ├── chat_tab.py         # Chat tab (PyQt6 widgets)
-│   │   ├── quant_tab.py        # Quantize tab (PyQt6 widgets)
-│   │   ├── server_tab.py       # Server tab (QProcess, QListWidget)
-│   │   └── converter.py        # Convert Tools QDialog (dynamic panel visibility)
-│   ├── core/                   # Business logic
-│   │   ├── llama_detect.py     # Root detection, config persistence
-│   │   ├── quant_logic.py      # Quant type definitions, arg builder
-│   │   └── converter_logic.py  # Converter helpers
-│   └── utils/                  # Helpers
-│       ├── ram_detect.py       # System RAM detection
-│       ├── gguf_info.py        # GGUF metadata reader
-│       └── terminal.py         # Terminal launcher helpers
-├── src/                        # Upstream llama.cpp C++ source
-├── ggml/                       # Upstream ggml backend
-├── tools/                      # llama-server, llama-cli, llama-quantize, etc.
-├── CMakeLists.txt              # Root build (includes llama_gui)
-└── llama-gui                   # Built binary (Linux/Android)
-    llama-forge-gui.exe         # Built binary (Windows)
+├── llama_gui/                    # GUI frontend (Python/PyQt6)
+│   ├── app.py                    # Entry point — QMainWindow + QTabWidget + toolbar
+│   ├── CMakeLists.txt            # GUI build script
+│   ├── requirements.txt          # Python deps (PyQt6>=6.6, pyinstaller)
+│   ├── llama_gui.png             # App icon
+│   ├── gui/                      # Tab UI components
+│   │   ├── __init__.py           # Shared QSS theme, LogConsole, make_scrollable()
+│   │   ├── chat_tab.py           # 💬 Chat tab
+│   │   ├── quant_tab.py          # 🧪 Quantize tab
+│   │   ├── server_tab.py         # 🖥 Server tab (QProcess + QListWidget)
+│   │   ├── bench_tab.py          # 📊 Benchmark tab (llama-bench)
+│   │   ├── imatrix_tab.py        # 🧮 Imatrix tab (llama-imatrix)
+│   │   ├── perplexity_tab.py     # 📐 Perplexity tab (llama-perplexity)
+│   │   ├── gguf_tools_tab.py     # 🗂 GGUF Tools tab (split / hash / metadata)
+│   │   ├── lora_tab.py           # 🔗 LoRA & CVector tab
+│   │   ├── extra_tools_tab.py    # 🛠 Extra Tools tab (TTS / MTMD / RPC / Tokenize / Speculative)
+│   │   └── converter.py          # 🔄 Convert Tools QDialog
+│   ├── core/                     # Business logic
+│   │   ├── llama_detect.py       # Root detection, config persistence
+│   │   ├── quant_logic.py        # Quant type definitions, arg builder
+│   │   └── converter_logic.py    # Converter helpers
+│   └── utils/                    # Helpers
+│       ├── ram_detect.py         # System RAM detection
+│       ├── gguf_info.py          # GGUF metadata reader
+│       ├── subprocess_stream.py  # Threaded stdout/stderr streaming
+│       └── terminal.py           # Cross-platform terminal launcher
+├── src/                          # Upstream llama.cpp C++ source
+├── ggml/                         # Upstream ggml backend
+├── tools/                        # llama-server, llama-cli, llama-bench, etc.
+├── CMakeLists.txt                # Root build (includes llama_gui)
+└── llama-gui                     # Built binary (Linux/Android)
+    llama-forge-gui.exe           # Built binary (Windows)
 ```
 
 ---
 
 ## 🔄 Upstream Sync
 
-llama-forge is pinned to a specific [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) release tag for stability. The current pinned tag is **`b9297`**.
-
-To update to a newer tag, edit `PINNED_TAG` in `scripts/sync-upstream.sh` and re-run.
-
-### First-time setup
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/dev-boffin-io/llama-forge/master/scripts/sync-upstream.sh \
-    -o ~/llama-forge-sync.sh
-chmod +x ~/llama-forge-sync.sh
-```
-
-### Run
+llama-forge is pinned to **`b9297`** of [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp).
 
 ```bash
 bash ~/llama-forge-sync.sh
 ```
 
-> The sync script automatically preserves all custom files (`llama_gui/`, `README.md`, `LICENSE`, `.gitattributes`, etc.) and restores itself — safe to run any time you want to update the pinned tag.
+> The sync script preserves all custom files (`llama_gui/`, `README.md`, `AGENTS.md`, etc.) and restores them after resetting to upstream.
 
 ---
 
@@ -345,9 +367,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## 📄 License
 
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
-
-Upstream llama.cpp is also MIT licensed. See [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) for their license.
+MIT License — see [LICENSE](LICENSE) for details.
+Upstream llama.cpp is also MIT licensed.
 
 ---
 
