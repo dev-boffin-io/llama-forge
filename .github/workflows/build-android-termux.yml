@@ -48,6 +48,7 @@ jobs:
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_EXAMPLES=ON \
             -DGGML_NATIVE=OFF \
+            -DLLAMA_BUILD_UI=OFF \
             -DBUILD_SHARED_LIBS=OFF
 
       - name: Build

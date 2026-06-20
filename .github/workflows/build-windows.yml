@@ -38,12 +38,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release `
             -DLLAMA_BUILD_TESTS=OFF `
             -DLLAMA_BUILD_EXAMPLES=ON `
-            -DGGML_NATIVE=OFF
-
-      - name: Build
-        run: cmake --build build --parallel
-
-      # ── llama_gui PyInstaller ──────────────────────────────────
+            -DGGML_NATIVE=OFF `
+            -DLLAMA_BUILD_UI=OFF      # ── llama_gui PyInstaller ──────────────────────────────────
       - name: Package llama_gui
         run: |
           pyinstaller --onefile --noconsole `
@@ -127,6 +123,7 @@ jobs:
             -DLLAMA_BUILD_TESTS=OFF `
             -DLLAMA_BUILD_EXAMPLES=ON `
             -DGGML_NATIVE=OFF `
+            -DLLAMA_BUILD_UI=OFF `
             -DCMAKE_SYSTEM_PROCESSOR=ARM64
 
       - name: Build

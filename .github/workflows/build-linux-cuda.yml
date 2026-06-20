@@ -46,7 +46,8 @@ jobs:
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_EXAMPLES=ON \
             -DGGML_CUDA=ON \
-            -DGGML_NATIVE=OFF
+            -DGGML_NATIVE=OFF \
+            -DLLAMA_BUILD_UI=OFF
 
       - name: Build
         run: cmake --build build --parallel $(nproc)
